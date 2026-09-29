@@ -39,3 +39,11 @@ export const GENERATION_CONSTRAINTS = {
   /** 점프로 건널 수 있는 가로 간격 (타일) */
   maxGapTiles: 4,
 } as const;
+
+/** 가시 타일의 피해 판정 영역 (타일 내부 px). 게임과 도달성 검증기가 같은 값을 쓴다. */
+export const SPIKE_HITBOX = {
+  /** 좌우 여백 */
+  insetX: 2,
+  /** 타일 위쪽에서 판정 시작까지 */
+  top: 8,
+} as const;

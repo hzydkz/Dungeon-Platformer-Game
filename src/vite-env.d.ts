@@ -19,3 +19,8 @@ declare module 'virtual:asset-files' {
   const files: readonly string[];
   export default files;
 }
+
+declare module '*.woff2?url' {
+  const url: string;
+  export default url;
+}

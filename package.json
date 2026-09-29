@@ -13,6 +13,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "galmuri": "^2.40.3",
     "phaser": "^3.90.0"
   },
   "devDependencies": {

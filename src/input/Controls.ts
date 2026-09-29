@@ -31,6 +31,8 @@ type ButtonAction = 'jump' | 'attack' | 'skill' | 'map' | 'confirm' | 'cancel';
 export class Controls {
   private readonly keys = new Map<ActionName, Phaser.Input.Keyboard.Key[]>();
   private prev = new Map<string, boolean>();
+  /** 프레임 사이에 눌렸다 떼어진 짧은 입력도 놓치지 않도록 key down 이벤트를 기록 */
+  private latched = new Set<string>();
   private menuRepeatTimer = 0;
   private lastMenuDir = { x: 0, y: 0 };
 
@@ -38,10 +40,9 @@ export class Controls {
     const kb = scene.input.keyboard;
     if (kb) {
       for (const [action, names] of Object.entries(INPUT.keys) as [ActionName, readonly string[]][]) {
-        this.keys.set(
-          action,
-          names.map((n) => kb.addKey(n, true)),
-        );
+        const keys = names.map((n) => kb.addKey(n, true));
+        for (const k of keys) k.on('down', () => this.latched.add(action));
+        this.keys.set(action, keys);
       }
     }
   }
@@ -64,11 +65,12 @@ export class Controls {
     return INPUT.gamepad[action].some((i) => this.padButton(pad, i));
   }
 
-  /** 현재 눌림 상태를 기록하고, 새로 눌렸으면 true */
+  /** 현재 눌림 상태를 기록하고, 새로 눌렸으면 true (프레임 사이의 짧은 탭 포함) */
   private edge(id: string, down: boolean): { pressed: boolean; released: boolean } {
     const was = this.prev.get(id) ?? false;
+    const tapped = this.latched.delete(id);
     this.prev.set(id, down);
-    return { pressed: down && !was, released: !down && was };
+    return { pressed: (down && !was) || (tapped && !was), released: (!down && was) || (tapped && !down) };
   }
 
   update(dt: number): InputFrame {
@@ -97,6 +99,9 @@ export class Controls {
     const attackE = this.edge('attack', attack);
     const skillE = this.edge('skill', skill);
     const upE = this.edge('up', up);
+    const mapE = this.edge('map', map);
+    const confirmE = this.edge('confirm', confirm);
+    const cancelE = this.edge('cancel', cancel);
 
     // 메뉴 이동: 처음 누를 때 한 번, 계속 누르면 반복 간격마다
     let menuX = 0;
@@ -127,19 +132,26 @@ export class Controls {
       skillReleased: skillE.released,
       upPressed: upE.pressed,
       downHeld: down,
-      mapPressed: this.edge('map', map).pressed,
-      confirmPressed: this.edge('confirm', confirm).pressed,
-      cancelPressed: this.edge('cancel', cancel).pressed,
+      mapPressed: mapE.pressed,
+      confirmPressed: confirmE.pressed,
+      cancelPressed: cancelE.pressed,
       menuX,
       menuY,
     };
   }
 
+  private readonly debugKeys = new Map<string, Phaser.Input.Keyboard.Key>();
+
   /** 디버그 키가 이번 프레임에 눌렸는지 */
   debugPressed(keyName: string): boolean {
     const kb = this.scene.input.keyboard;
     if (!kb) return false;
-    const key = kb.addKey(keyName, false);
+    let key = this.debugKeys.get(keyName);
+    if (!key) {
+      key = kb.addKey(keyName, false);
+      key.on('down', () => this.latched.add(`debug_${keyName}`));
+      this.debugKeys.set(keyName, key);
+    }
     return this.edge(`debug_${keyName}`, key.isDown).pressed;
   }
 }

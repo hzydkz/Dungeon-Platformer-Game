@@ -7,6 +7,7 @@ import { ROOM } from '../config/generation';
 import { basicCharToTile, getTile, gridFromAscii, type TileGrid } from '../core/tiles';
 import { Player } from '../entities/Player';
 import { Controls } from '../input/Controls';
+import { textStyle } from '../ui/text';
 import { buildTilemap } from './tilemap';
 import { RegistryKey, SceneKey } from './keys';
 
@@ -36,17 +37,13 @@ export class TestRoomScene extends Phaser.Scene {
     if (DEBUG.enabled) {
       const seed = this.registry.get(RegistryKey.runSeed) as number;
       this.info = this.add
-        .text(2, 2, '', { fontFamily: 'monospace', fontSize: '8px', color: '#b8b8d8' })
+        .text(2, 2, '', textStyle('tiny', '#b8b8d8'))
         .setScrollFactor(0)
         .setDepth(100);
       this.info.setData('seed', seed);
     }
     this.add
-      .text(DISPLAY.width / 2, DISPLAY.height - 10, '←→ 이동  Space/Z/A 점프  ↓+점프 발판 내려가기', {
-        fontFamily: 'monospace',
-        fontSize: '8px',
-        color: '#8888aa',
-      })
+      .text(DISPLAY.width / 2, DISPLAY.height - 10, '←→ 이동  Space/Z/A 점프  ↓+점프 발판 내려가기', textStyle('tiny', '#8888aa'))
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(100);

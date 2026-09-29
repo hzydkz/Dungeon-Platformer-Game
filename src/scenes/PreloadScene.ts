@@ -55,6 +55,6 @@ export class PreloadScene extends Phaser.Scene {
         });
       }
     }
-    this.scene.start(SceneKey.TestRoom);
+    this.scene.start(SceneKey.Floor, { floor: 1 });
   }
 }

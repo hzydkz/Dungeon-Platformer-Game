@@ -28,6 +28,7 @@ npm run build:preview  # 디버그 기능을 켠 미리보기 빌드 (GitHub Pag
 src/
   config/   수치 설정 (화면, 이동 물리, 디버그). 코드에 수치를 하드코딩하지 않는다.
   core/     Phaser 비의존 순수 로직 (rng, seed, ...). Vitest로 테스트.
+  rooms/    방 템플릿 (ASCII). 형식은 src/core/generation/template.ts
   scenes/   Phaser 씬
 tests/      Vitest 테스트
 docs/       QUESTIONS.md (기획 확인 필요 사항)
@@ -43,4 +44,5 @@ docs/       QUESTIONS.md (기획 확인 필요 사항)
 
 - [x] M0 프로젝트 셋업 — 빈 씬 실행, PRNG 재현성 테스트
 - [x] M1 플레이어 이동 — 가변 점프/코요테/버퍼, 게임패드, 에셋 manifest + 플레이스홀더
-- [ ] M2 절차적 맵 생성 + 지도
+- [x] M2 절차적 맵 생성 + 지도 — 템플릿 44개+아레나 3개, 시뮬레이션 기반 도달성 검증, 시드 1,000개 0% 실패
+- [ ] M3 전투 + 몬스터

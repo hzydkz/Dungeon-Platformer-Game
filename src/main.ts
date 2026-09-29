@@ -5,10 +5,15 @@ import { MOVEMENT } from './config/movement';
 import { computeIntegerZoom } from './core/display';
 import { BootScene } from './scenes/BootScene';
 import { PreloadScene } from './scenes/PreloadScene';
+import { FloorScene } from './scenes/FloorScene';
+import { HudScene } from './scenes/HudScene';
 import { TestRoomScene } from './scenes/TestRoomScene';
+import { loadFonts } from './ui/text';
 
 const currentZoom = (): number =>
   computeIntegerZoom(window.innerWidth, window.innerHeight, DISPLAY.width, DISPLAY.height);
+
+await loadFonts();
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -34,7 +39,7 @@ const game = new Phaser.Game({
       tileBias: 16,
     },
   },
-  scene: [BootScene, PreloadScene, TestRoomScene],
+  scene: [BootScene, PreloadScene, FloorScene, HudScene, TestRoomScene],
 });
 
 // 창 크기가 바뀌면 정수배 확대 배율을 다시 계산한다.

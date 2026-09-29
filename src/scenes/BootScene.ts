@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { DEBUG } from '../config/debug';
+import { createRun } from '../core/run';
 import { generateRunSeed, parseSeedFromQuery } from '../core/seed';
 import { RegistryKey, SceneKey } from './keys';
 
@@ -18,6 +19,7 @@ export class BootScene extends Phaser.Scene {
       : null;
     const runSeed = fromQuery ?? generateRunSeed();
     this.registry.set(RegistryKey.runSeed, runSeed);
+    this.registry.set(RegistryKey.run, createRun(runSeed, performance.now()));
     this.scene.start(SceneKey.Preload);
   }
 }

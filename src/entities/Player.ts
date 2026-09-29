@@ -18,6 +18,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private dropUntil = 0;
   /** 이동 조작을 잠시 막는 시간 (넉백, 대시 등) */
   controlLockUntil = 0;
+  /** 공중에서 ↓를 누르고 있으면 단방향 발판을 통과한다 */
+  private downHeldInAir = false;
   /** 마지막으로 안전하게 서 있던 위치 (가시에 닿으면 여기로 복귀) */
   readonly lastSafe = new Phaser.Math.Vector2();
 
@@ -50,7 +52,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   /** 단방향 발판과 충돌할지 (Arcade processCallback용) */
   shouldCollideOneWay(tile: Phaser.Tilemaps.Tile): boolean {
     if (!isOneWayTile(tile.index)) return true;
-    if (this.scene.time.now / 1000 < this.dropUntil) return false;
+    if (this.scene.time.now / 1000 < this.dropUntil || this.downHeldInAir) return false;
     const body = this.arcadeBody;
     // 이전 프레임에 발판 위에 있었을 때만 착지
     return body.velocity.y >= 0 && body.prev.y + body.height <= tile.pixelY + 2;
@@ -74,6 +76,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const now = this.scene.time.now / 1000;
     const body = this.arcadeBody;
     const locked = now < this.controlLockUntil;
+    this.downHeldInAir = input.downHeld && !this.onGround;
     let jumpPressed = input.jumpPressed && !locked;
 
     if (jumpPressed && input.downHeld && this.onGround && this.standingOnOneWay()) {
