@@ -2,9 +2,10 @@ import Phaser from 'phaser';
 import { AssetKey } from '../assets/keys';
 import type { Hittable } from '../combat/types';
 import { COMBAT } from '../config/combat';
-import { BossBrain } from '../core/boss/brain';
+import { MOVEMENT } from '../config/movement';
+import { BossBrain, classifySituation } from '../core/boss/brain';
 import type { Rng } from '../core/rng';
-import type { BossDef, BossPattern } from '../data/bosses';
+import { BOSS_RULES, type BossDef, type BossPattern } from '../data/bosses';
 import type { Effects } from '../fx/Effects';
 
 /** 보스가 씬에 요청하는 것들 */
@@ -46,6 +47,14 @@ export class Boss extends Phaser.Physics.Arcade.Sprite implements Hittable {
   private flashTime = 0;
   private dir: 1 | -1 = -1;
   private hover = 0;
+  /** 대기 중 이동 목표 */
+  private intent: 'approach' | 'retreat' | 'hop' | 'hold' | 'swoop' = 'approach';
+  private intentX = 0;
+  private intentY = 0;
+  /** 도약 중 유지할 가로 속도 (벽에 닿아 0이 되어도 공중에서 다시 적용) */
+  private airVx = 0;
+  /** 최근 피격 시각 (회피 판단) */
+  private hitTimes: number[] = [];
 
   constructor(scene: Phaser.Scene, x: number, feetY: number, def: BossDef, tier: 1 | 2 | 3, scale: number, rng: Rng) {
     super(scene, x, feetY, AssetKey.boss(def.id), 0);
@@ -103,6 +112,7 @@ export class Boss extends Phaser.Physics.Arcade.Sprite implements Hittable {
     if (this.brain.invulnerable) return false;
     this.hp -= amount;
     this.flashTime = COMBAT.monster.flashTime;
+    this.hitTimes.push(this.scene.time.now / 1000);
     if (this.hp <= 0) {
       this.hp = 0;
       this.alive = false;
@@ -120,7 +130,8 @@ export class Boss extends Phaser.Physics.Arcade.Sprite implements Hittable {
     this.flashTime -= dt;
     const now = this.scene.time.now / 1000;
 
-    for (const e of this.brain.update(dt, this.hp / this.maxHp)) {
+    const situation = classifySituation(w.target.x - this.x, w.target.y + 12 - this.y);
+    for (const e of this.brain.update(dt, this.hp / this.maxHp, situation)) {
       switch (e.type) {
         case 'telegraph':
           this.onTelegraph(e.pattern, w);
@@ -137,6 +148,7 @@ export class Boss extends Phaser.Physics.Arcade.Sprite implements Hittable {
         case 'idle':
           this.markers.clear();
           this.playAnim('idle');
+          this.chooseIntent(w);
           break;
         case 'phase2':
           this.markers.clear();
@@ -154,13 +166,15 @@ export class Boss extends Phaser.Physics.Arcade.Sprite implements Hittable {
     const state = this.brain.state;
     const p = this.brain.current;
     if (state === 'idle') this.idleMove(dt, w);
+    // 대기 중에 연속으로 맞으면 회피 도약 (후딜레이는 반격 기회로 남겨 둔다)
+    if (state === 'idle' && this.shouldEvade(now)) this.evade(w);
     if (state === 'active' && p) this.activeUpdate(p, w);
-    if ((state === 'telegraph' || state === 'intro' || state === 'phaseShift') && !this.def.flying) body.setVelocityX(0);
-    if (this.def.flying && state !== 'active') {
+    if ((state === 'telegraph' || state === 'intro' || state === 'phaseShift') && !this.def.flying && body.blocked.down) body.setVelocityX(0);
+    if (this.def.flying && state !== 'active' && state !== 'idle') {
       // 비행형: 아레나 위쪽 높이로 돌아간다
       const wantY = w.arena.top + 80;
       body.setVelocityY((wantY - this.y) * 2);
-      if (state !== 'idle') body.setVelocityX(0);
+      body.setVelocityX(0);
     }
 
     // 바닥 가시 등 지속 피해 구역
@@ -176,16 +190,118 @@ export class Boss extends Phaser.Physics.Arcade.Sprite implements Hittable {
     else this.clearTint();
   }
 
+  /**
+   * 대기 구간마다 이동 목표를 정한다: 거리를 좁히기, 물러나기, 플레이어를 뛰어넘기,
+   * 발판 위의 플레이어에게 도약, (비행형) 아레나의 다른 곳으로 이동.
+   */
+  private chooseIntent(w: BossWorld): void {
+    const dx = w.target.x - this.x;
+    const dy = w.target.y + 12 - this.y;
+    const dist = Math.abs(dx);
+    const a = w.arena;
+    if (this.def.flying) {
+      this.intent = 'swoop';
+      // 플레이어 반대쪽이나 위쪽 임의 지점
+      const side = this.rng.chance(0.5) ? -1 : 1;
+      this.intentX = Phaser.Math.Clamp(w.target.x + side * this.rng.float(80, 200), a.left + 40, a.right - 40);
+      this.intentY = this.rng.float(a.top + 50, a.top + 130);
+      return;
+    }
+    if (dy < -BOSS_RULES.aboveThreshold && dist < 200) {
+      this.intent = 'hop';
+      this.intentX = w.target.x;
+    } else if (dist < 70) {
+      if (this.rng.chance(0.5)) {
+        this.intent = 'hop';
+        // 플레이어를 뛰어넘어 반대편으로
+        this.intentX = Phaser.Math.Clamp(w.target.x + Math.sign(dx || 1) * 90, a.left + 30, a.right - 30);
+      } else {
+        this.intent = 'retreat';
+        this.intentX = Phaser.Math.Clamp(this.x - Math.sign(dx || 1) * 140, a.left + 30, a.right - 30);
+      }
+    } else if (dist > 160) {
+      this.intent = this.rng.chance(0.3) ? 'hop' : 'approach';
+      this.intentX = w.target.x - Math.sign(dx) * 60;
+    } else {
+      const r = this.rng.int(0, 2);
+      this.intent = r === 0 ? 'approach' : r === 1 ? 'hold' : 'hop';
+      this.intentX = r === 2 ? Phaser.Math.Clamp(this.x + this.rng.float(-120, 120), a.left + 30, a.right - 30) : w.target.x;
+    }
+  }
+
+  private jump(vx: number): void {
+    const body = this.arcadeBody;
+    if (!body.blocked.down || this.def.flying) return;
+    this.airVx = vx;
+    body.setVelocity(vx, -this.def.jumpVelocity);
+  }
+
   private idleMove(dt: number, w: BossWorld): void {
     const body = this.arcadeBody;
     const dx = w.target.x - this.x;
     this.dir = dx >= 0 ? 1 : -1;
+    const speed = this.def.moveSpeed;
     if (this.def.flying) {
-      this.hover += dt * 2;
-      body.setVelocityX(Math.abs(dx) > 40 ? this.dir * this.def.moveSpeed : Math.sin(this.hover) * 20);
-    } else {
-      body.setVelocityX(Math.abs(dx) > 50 ? this.dir * this.def.moveSpeed : 0);
+      this.hover += dt * 3;
+      const tx = this.intentX - this.x;
+      const ty = this.intentY - (this.y - body.height / 2);
+      const len = Math.max(1, Math.hypot(tx, ty));
+      const k = len > 8 ? 1.6 : 0;
+      body.setVelocity((tx / len) * speed * k, (ty / len) * speed * k + Math.sin(this.hover) * 15);
+      return;
     }
+    const tx = this.intentX - this.x;
+    // 공중에서는 도약할 때의 가로 속도를 유지한다 (기둥 옆면에 닿아도 넘어가게)
+    if (!body.blocked.down) {
+      body.setVelocityX(this.airVx);
+      return;
+    }
+    this.airVx = 0;
+    switch (this.intent) {
+      case 'hold':
+        if (body.blocked.down) body.setVelocityX(0);
+        break;
+      case 'hop':
+        if (body.blocked.down) {
+          // 도약 시간 동안 목표 x에 닿도록
+          const air = (2 * this.def.jumpVelocity) / MOVEMENT.gravity;
+          this.jump(Phaser.Math.Clamp(tx / air, -speed * 2.2, speed * 2.2));
+          this.intent = 'hold';
+        }
+        break;
+      default: {
+        const moving = Math.abs(tx) > 10;
+        if (body.blocked.down) body.setVelocityX(moving ? Math.sign(tx) * speed * (this.intent === 'retreat' ? 1.4 : 1.2) : 0);
+        // 기둥 등에 막히면 뛰어넘는다
+        if (moving && (body.blocked.left || body.blocked.right)) this.jump(Math.sign(tx) * speed * 1.3);
+        if (this.intent === 'retreat' && moving) this.dir = tx > 0 ? 1 : -1;
+      }
+    }
+  }
+
+  private shouldEvade(now: number): boolean {
+    this.hitTimes = this.hitTimes.filter((t) => now - t < BOSS_RULES.evadeWindow);
+    return this.hitTimes.length >= BOSS_RULES.evadeHits;
+  }
+
+  /** 연속으로 맞으면 플레이어에게서 멀어지는 쪽으로 도약 (비행형은 위로 이탈) */
+  private evade(w: BossWorld): void {
+    this.hitTimes = [];
+    const body = this.arcadeBody;
+    const away = this.x >= w.target.x ? 1 : -1;
+    const roomLeft = away > 0 ? w.arena.right - this.x : this.x - w.arena.left;
+    const dirX = roomLeft > 100 ? away : -away;
+    if (this.def.flying) {
+      this.intent = 'swoop';
+      this.intentX = Phaser.Math.Clamp(this.x + dirX * 220, w.arena.left + 40, w.arena.right - 40);
+      this.intentY = w.arena.top + 50;
+      body.setVelocity(dirX * this.def.moveSpeed * 2, -this.def.moveSpeed);
+    } else if (body.blocked.down) {
+      this.airVx = dirX * this.def.moveSpeed * 2.4;
+      body.setVelocity(this.airVx, -this.def.jumpVelocity * 0.85);
+      this.intent = 'hold';
+    }
+    w.fx.burst(this.x, this.y - 8, 0xc0b0e0, 10, 90);
   }
 
   private onTelegraph(p: BossPattern, w: BossWorld): void {

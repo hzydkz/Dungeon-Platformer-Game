@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { BossBrain, type BossEvent } from '../src/core/boss/brain';
+import { MOVEMENT } from '../src/config/movement';
+import { BossBrain, classifySituation, type BossEvent } from '../src/core/boss/brain';
 import { Rng } from '../src/core/rng';
 import { BOSSES, BOSS_RULES, bossForFloor } from '../src/data/bosses';
 
@@ -104,5 +105,39 @@ describe('보스 상태 머신', () => {
         .filter((e) => e.type === 'telegraph')
         .map((e) => (e as { pattern: { id: string } }).pattern.id);
     expect(seq(11)).toEqual(seq(11));
+  });
+});
+
+describe('상황에 맞는 패턴 선택', () => {
+  it('상황 분류: 위/가까이/멀리', () => {
+    expect(classifySituation(0, -80)).toContain('above');
+    expect(classifySituation(30, 0)).toEqual(['near']);
+    expect(classifySituation(300, 0)).toEqual(['far']);
+  });
+
+  it('플레이어가 발판 위에 있으면 위를 노리는 패턴을 더 자주 쓴다', () => {
+    const def = BOSSES[0]!;
+    const count = (situation: ('above' | 'near' | 'far')[]) => {
+      const brain = new BossBrain(def, 3, new Rng(21));
+      let above = 0;
+      let total = 0;
+      const dt = 1 / 60;
+      for (let t = 0; t < 400; t += dt) {
+        for (const e of brain.update(dt, 1, situation)) {
+          if (e.type !== 'telegraph') continue;
+          total++;
+          if (e.pattern.prefer?.includes('above')) above++;
+        }
+      }
+      return above / total;
+    };
+    expect(count(['above'])).toBeGreaterThan(count(['far']) + 0.15);
+  });
+
+  it('지상 보스의 도약은 아레나 기둥(3타일)과 발판을 넘을 수 있다', () => {
+    for (const def of BOSSES.filter((b) => !b.flying)) {
+      const height = (def.jumpVelocity * def.jumpVelocity) / (2 * MOVEMENT.gravity);
+      expect(height, def.id).toBeGreaterThan(3 * 16 + 8);
+    }
   });
 });

@@ -24,7 +24,11 @@ export interface BossPattern {
   /** 속도(px/s), 개수 등 행동별 값 */
   readonly speed?: number;
   readonly count?: number;
+  /** 이 상황이면 더 자주 고른다: 플레이어가 위(발판)/가까이/멀리 있을 때 */
+  readonly prefer?: readonly BossSituation[];
 }
+
+export type BossSituation = 'above' | 'near' | 'far';
 
 export interface BossDef {
   readonly id: 'cave' | 'ruins' | 'abyss' | 'final';
@@ -35,8 +39,10 @@ export interface BossDef {
   readonly bodyWidth: number;
   readonly bodyHeight: number;
   readonly flying: boolean;
-  /** 대기 중 이동 속도 */
+  /** 대기 중 이동 속도 (px/s) */
   readonly moveSpeed: number;
+  /** 도약 초속 (px/s, 지상 보스). 발판/기둥을 넘을 수 있어야 한다 */
+  readonly jumpVelocity: number;
   /** 패턴 사이 대기 (초) */
   readonly idleTime: number;
   /** 2페이즈 시간 배율 (예고/공격/후딜을 이 값으로 나눈다) */
@@ -52,6 +58,15 @@ export const BOSS_RULES = {
   /** 등장/2페이즈 전환 연출 동안 무적 (초) */
   introTime: 1.2,
   phaseShiftTime: 0.9,
+  /** 상황에 맞는 패턴의 가중치 배율 */
+  preferMultiplier: 3,
+  /** 상황 판정 (px): 플레이어 발이 보스 발보다 이만큼 위면 'above' */
+  aboveThreshold: 40,
+  nearDistance: 90,
+  farDistance: 190,
+  /** 이 시간(초) 안에 이만큼 맞으면 회피 도약 */
+  evadeWindow: 1.5,
+  evadeHits: 3,
 } as const;
 
 export const BOSSES: readonly BossDef[] = [
@@ -63,15 +78,16 @@ export const BOSSES: readonly BossDef[] = [
     bodyWidth: 44,
     bodyHeight: 36,
     flying: false,
-    moveSpeed: 40,
+    moveSpeed: 80,
+    jumpVelocity: 400,
     idleTime: 0.7,
     phase2Speed: 1.25,
     patterns: [
-      { id: 'cave_charge', action: 'charge', telegraph: 0.7, active: 1.4, recovery: 0.9, weight: 3, phase: 1, minTier: 1, damage: 18, speed: 250 },
-      { id: 'cave_slam', action: 'leapSlam', telegraph: 0.6, active: 1.4, recovery: 1.0, weight: 3, phase: 1, minTier: 1, damage: 16, speed: 170 },
-      { id: 'cave_rocks', action: 'rockfall', telegraph: 0.9, active: 1.2, recovery: 0.7, weight: 2, phase: 2, minTier: 1, damage: 14, count: 5 },
-      { id: 'cave_rocks_t2', action: 'rockfall', telegraph: 0.9, active: 1.2, recovery: 0.7, weight: 1, phase: 1, minTier: 2, damage: 14, count: 4 },
-      { id: 'cave_volley_t3', action: 'volley', telegraph: 0.6, active: 0.3, recovery: 0.8, weight: 2, phase: 1, minTier: 3, damage: 12, speed: 150, count: 5 },
+      { id: 'cave_charge', action: 'charge', telegraph: 0.7, active: 1.4, recovery: 0.9, weight: 3, phase: 1, minTier: 1, damage: 18, speed: 250, prefer: ['far'] },
+      { id: 'cave_slam', action: 'leapSlam', telegraph: 0.6, active: 1.4, recovery: 1.0, weight: 3, phase: 1, minTier: 1, damage: 16, speed: 170, prefer: ['above', 'near'] },
+      { id: 'cave_rocks', action: 'rockfall', telegraph: 0.9, active: 1.2, recovery: 0.7, weight: 2, phase: 2, minTier: 1, damage: 14, count: 5, prefer: ['above'] },
+      { id: 'cave_rocks_t2', action: 'rockfall', telegraph: 0.9, active: 1.2, recovery: 0.7, weight: 1, phase: 1, minTier: 2, damage: 14, count: 4, prefer: ['above'] },
+      { id: 'cave_volley_t3', action: 'volley', telegraph: 0.6, active: 0.3, recovery: 0.8, weight: 2, phase: 1, minTier: 3, damage: 12, speed: 150, count: 5, prefer: ['far', 'above'] },
     ],
   },
   {
@@ -82,15 +98,16 @@ export const BOSSES: readonly BossDef[] = [
     bodyWidth: 26,
     bodyHeight: 44,
     flying: false,
-    moveSpeed: 55,
+    moveSpeed: 105,
+    jumpVelocity: 400,
     idleTime: 0.6,
     phase2Speed: 1.3,
     patterns: [
-      { id: 'ruins_dash', action: 'charge', telegraph: 0.5, active: 1.0, recovery: 0.8, weight: 3, phase: 1, minTier: 1, damage: 18, speed: 300 },
-      { id: 'ruins_wave', action: 'slashWave', telegraph: 0.55, active: 0.3, recovery: 0.8, weight: 3, phase: 1, minTier: 1, damage: 15, speed: 220 },
-      { id: 'ruins_slam', action: 'leapSlam', telegraph: 0.6, active: 1.4, recovery: 0.9, weight: 2, phase: 1, minTier: 1, damage: 17, speed: 190 },
-      { id: 'ruins_spears', action: 'volley', telegraph: 0.65, active: 0.3, recovery: 0.9, weight: 2, phase: 2, minTier: 1, damage: 13, speed: 170, count: 5 },
-      { id: 'ruins_spikes_t2', action: 'groundSpikes', telegraph: 0.8, active: 0.6, recovery: 0.7, weight: 2, phase: 1, minTier: 2, damage: 16, count: 2 },
+      { id: 'ruins_dash', action: 'charge', telegraph: 0.5, active: 1.0, recovery: 0.8, weight: 3, phase: 1, minTier: 1, damage: 18, speed: 300, prefer: ['far'] },
+      { id: 'ruins_wave', action: 'slashWave', telegraph: 0.55, active: 0.3, recovery: 0.8, weight: 3, phase: 1, minTier: 1, damage: 15, speed: 220, prefer: ['far'] },
+      { id: 'ruins_slam', action: 'leapSlam', telegraph: 0.6, active: 1.4, recovery: 0.9, weight: 2, phase: 1, minTier: 1, damage: 17, speed: 190, prefer: ['above', 'near'] },
+      { id: 'ruins_spears', action: 'volley', telegraph: 0.65, active: 0.3, recovery: 0.9, weight: 2, phase: 2, minTier: 1, damage: 13, speed: 170, count: 5, prefer: ['far', 'above'] },
+      { id: 'ruins_spikes_t2', action: 'groundSpikes', telegraph: 0.8, active: 0.6, recovery: 0.7, weight: 2, phase: 1, minTier: 2, damage: 16, count: 2, prefer: ['near', 'above'] },
     ],
   },
   {
@@ -101,15 +118,16 @@ export const BOSSES: readonly BossDef[] = [
     bodyWidth: 44,
     bodyHeight: 44,
     flying: true,
-    moveSpeed: 50,
+    moveSpeed: 95,
+    jumpVelocity: 0,
     idleTime: 0.6,
     phase2Speed: 1.3,
     patterns: [
-      { id: 'abyss_volley', action: 'volley', telegraph: 0.6, active: 0.3, recovery: 0.8, weight: 3, phase: 1, minTier: 1, damage: 13, speed: 150, count: 7 },
-      { id: 'abyss_spikes', action: 'groundSpikes', telegraph: 0.8, active: 0.6, recovery: 0.8, weight: 3, phase: 1, minTier: 1, damage: 16, count: 3 },
-      { id: 'abyss_dive', action: 'dive', telegraph: 0.7, active: 1.2, recovery: 1.0, weight: 2, phase: 1, minTier: 1, damage: 18, speed: 260 },
-      { id: 'abyss_orbs', action: 'homingOrbs', telegraph: 0.7, active: 0.3, recovery: 0.9, weight: 2, phase: 2, minTier: 1, damage: 14, speed: 80, count: 3 },
-      { id: 'abyss_rocks_t2', action: 'rockfall', telegraph: 0.9, active: 1.2, recovery: 0.7, weight: 1, phase: 1, minTier: 2, damage: 15, count: 6 },
+      { id: 'abyss_volley', action: 'volley', telegraph: 0.6, active: 0.3, recovery: 0.8, weight: 3, phase: 1, minTier: 1, damage: 13, speed: 150, count: 7, prefer: ['far', 'above'] },
+      { id: 'abyss_spikes', action: 'groundSpikes', telegraph: 0.8, active: 0.6, recovery: 0.8, weight: 3, phase: 1, minTier: 1, damage: 16, count: 3, prefer: ['near', 'above'] },
+      { id: 'abyss_dive', action: 'dive', telegraph: 0.7, active: 1.2, recovery: 1.0, weight: 2, phase: 1, minTier: 1, damage: 18, speed: 260, prefer: ['far'] },
+      { id: 'abyss_orbs', action: 'homingOrbs', telegraph: 0.7, active: 0.3, recovery: 0.9, weight: 2, phase: 2, minTier: 1, damage: 14, speed: 80, count: 3, prefer: ['above'] },
+      { id: 'abyss_rocks_t2', action: 'rockfall', telegraph: 0.9, active: 1.2, recovery: 0.7, weight: 1, phase: 1, minTier: 2, damage: 15, count: 6, prefer: ['above'] },
     ],
   },
   {
@@ -120,15 +138,16 @@ export const BOSSES: readonly BossDef[] = [
     bodyWidth: 48,
     bodyHeight: 60,
     flying: false,
-    moveSpeed: 50,
+    moveSpeed: 100,
+    jumpVelocity: 400,
     idleTime: 0.55,
     phase2Speed: 1.35,
     patterns: [
-      { id: 'final_charge', action: 'charge', telegraph: 0.6, active: 1.2, recovery: 0.8, weight: 3, phase: 1, minTier: 1, damage: 20, speed: 290 },
-      { id: 'final_slam', action: 'leapSlam', telegraph: 0.6, active: 1.4, recovery: 0.9, weight: 3, phase: 1, minTier: 1, damage: 20, speed: 200 },
-      { id: 'final_volley', action: 'volley', telegraph: 0.6, active: 0.3, recovery: 0.8, weight: 2, phase: 1, minTier: 1, damage: 15, speed: 160, count: 7 },
-      { id: 'final_spikes', action: 'groundSpikes', telegraph: 0.8, active: 0.6, recovery: 0.8, weight: 2, phase: 1, minTier: 1, damage: 18, count: 3 },
-      { id: 'final_rocks', action: 'rockfall', telegraph: 0.9, active: 1.2, recovery: 0.7, weight: 2, phase: 2, minTier: 1, damage: 16, count: 7 },
+      { id: 'final_charge', action: 'charge', telegraph: 0.6, active: 1.2, recovery: 0.8, weight: 3, phase: 1, minTier: 1, damage: 20, speed: 290, prefer: ['far'] },
+      { id: 'final_slam', action: 'leapSlam', telegraph: 0.6, active: 1.4, recovery: 0.9, weight: 3, phase: 1, minTier: 1, damage: 20, speed: 200, prefer: ['above', 'near'] },
+      { id: 'final_volley', action: 'volley', telegraph: 0.6, active: 0.3, recovery: 0.8, weight: 2, phase: 1, minTier: 1, damage: 15, speed: 160, count: 7, prefer: ['far', 'above'] },
+      { id: 'final_spikes', action: 'groundSpikes', telegraph: 0.8, active: 0.6, recovery: 0.8, weight: 2, phase: 1, minTier: 1, damage: 18, count: 3, prefer: ['near', 'above'] },
+      { id: 'final_rocks', action: 'rockfall', telegraph: 0.9, active: 1.2, recovery: 0.7, weight: 2, phase: 2, minTier: 1, damage: 16, count: 7, prefer: ['above'] },
       { id: 'final_summon', action: 'summon', telegraph: 0.8, active: 0.3, recovery: 1.0, weight: 1, phase: 2, minTier: 1, damage: 0, count: 2 },
     ],
   },

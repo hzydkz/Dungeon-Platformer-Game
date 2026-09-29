@@ -4,7 +4,7 @@
  * 체력 50% 이하에서 2페이즈: 전환 연출 후 2페이즈 패턴 추가 + 시간 배율(빨라짐).
  * 예고 시간은 배율을 적용해도 최소값 아래로 내려가지 않는다.
  */
-import { BOSS_RULES, type BossDef, type BossPattern } from '../../data/bosses';
+import { BOSS_RULES, type BossDef, type BossPattern, type BossSituation } from '../../data/bosses';
 import type { Rng } from '../rng';
 
 export type BossState = 'intro' | 'idle' | 'telegraph' | 'active' | 'recovery' | 'phaseShift' | 'dead';
@@ -16,6 +16,18 @@ export type BossEvent =
   | { readonly type: 'idle' }
   | { readonly type: 'phase2' }
   | { readonly type: 'dead' };
+
+/**
+ * 플레이어 위치로 상황을 분류한다. dx, dy는 보스 발 기준 플레이어 발 위치 (px, 아래가 +).
+ */
+export function classifySituation(dx: number, dy: number): BossSituation[] {
+  const out: BossSituation[] = [];
+  if (dy < -BOSS_RULES.aboveThreshold) out.push('above');
+  const dist = Math.hypot(dx, dy);
+  if (dist < BOSS_RULES.nearDistance) out.push('near');
+  if (dist > BOSS_RULES.farDistance) out.push('far');
+  return out;
+}
 
 export class BossBrain {
   state: BossState = 'intro';
@@ -68,16 +80,19 @@ export class BossBrain {
     return this.state === 'intro' || this.state === 'phaseShift' || this.state === 'dead';
   }
 
-  private pick(): BossPattern {
+  /** 상황에 맞는 패턴(prefer)의 가중치를 올려서 고른다 */
+  private pick(situation: readonly BossSituation[]): BossPattern {
     const list = this.available();
     const pool = list.length > 1 ? list.filter((p) => p.id !== this.lastId) : list;
-    const p = this.rng.weightedPick(pool, (x) => x.weight);
+    const weight = (x: BossPattern) =>
+      x.weight * (x.prefer?.some((s) => situation.includes(s)) ? BOSS_RULES.preferMultiplier : 1);
+    const p = this.rng.weightedPick(pool, weight);
     this.lastId = p.id;
     return p;
   }
 
   /** 한 프레임 진행. 체력 비율로 페이즈 전환을 판단한다 */
-  update(dt: number, hpRatio: number): BossEvent[] {
+  update(dt: number, hpRatio: number, situation: readonly BossSituation[] = []): BossEvent[] {
     const events: BossEvent[] = [];
     if (this.state === 'dead') return events;
     if (hpRatio <= 0) {
@@ -104,7 +119,7 @@ export class BossBrain {
         break;
       case 'idle':
         if (this.time >= this.idleTime()) {
-          this.current = this.pick();
+          this.current = this.pick(situation);
           this.state = 'telegraph';
           this.time = 0;
           events.push({ type: 'telegraph', pattern: this.current });
