@@ -5,6 +5,7 @@ import { MAP } from '../config/map';
 import { ROOM } from '../config/generation';
 import { PROGRESSION } from '../config/progression';
 import { Controls } from '../input/Controls';
+import { addVignette } from '../fx/Scenery';
 import { textStyle } from '../ui/text';
 import type { HudSource } from './FloorScene';
 import { RegistryKey, SceneKey } from './keys';
@@ -34,6 +35,7 @@ export class HudScene extends Phaser.Scene {
 
   create(): void {
     this.controls = new Controls(this);
+    addVignette(this).setDepth(0);
     this.mini = this.add.graphics().setDepth(10);
     this.full = this.add.graphics().setDepth(20).setVisible(false);
     this.fullTitle = this.add

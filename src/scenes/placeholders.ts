@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import type { BgLayer, ThemeId } from '../assets/keys';
+import { drawBackground, drawForeground } from './proceduralArt';
 import {
   TILESET_SLOTS,
   type AssetManifest,
@@ -46,8 +48,14 @@ function makeImage(scene: Phaser.Scene, e: ImageEntry): void {
   const tex = scene.textures.createCanvas(e.key, e.width, e.height);
   if (!tex) return;
   const ctx = tex.getContext();
-  ctx.fillStyle = e.color;
-  ctx.fillRect(0, 0, e.width, e.height);
+  const bg = /^bg_(cave|ruins|abyss)_(far|mid|near)$/.exec(e.key);
+  const fg = /^fg_(cave|ruins|abyss)$/.exec(e.key);
+  if (bg) drawBackground(ctx, bg[1] as ThemeId, bg[2] as BgLayer, e.width, e.height);
+  else if (fg) drawForeground(ctx, fg[1] as ThemeId, e.width, e.height);
+  else {
+    ctx.fillStyle = e.color;
+    ctx.fillRect(0, 0, e.width, e.height);
+  }
   tex.refresh();
 }
 
@@ -81,10 +89,19 @@ function makeTileset(scene: Phaser.Scene, e: TilesetEntry): void {
         ctx.fillRect(ox, 0, s, s);
         ctx.fillStyle = color;
         ctx.fillRect(ox + 1, 1, s - 2, s - 2);
+        if (slot === 'wall') {
+          ctx.fillStyle = shade(color, 1.25);
+          ctx.fillRect(ox + 1, 1, s - 2, 1);
+          ctx.fillStyle = shade(color, 0.8);
+          ctx.fillRect(ox + 3, 9, 2, 1);
+          ctx.fillRect(ox + 10, 5, 2, 1);
+          ctx.fillRect(ox + 7, 12, 3, 1);
+        }
         if (slot === 'breakable') {
-          ctx.fillStyle = shade(color, 0.5);
-          ctx.fillRect(ox + 3, 7, 10, 1);
-          ctx.fillRect(ox + 7, 3, 1, 10);
+          // 비밀 벽: 일반 벽과 거의 같고 가는 금 하나만 보인다
+          ctx.fillStyle = shade(color, 0.75);
+          ctx.fillRect(ox + 6, 4, 1, 3);
+          ctx.fillRect(ox + 7, 7, 1, 3);
         }
     }
   });

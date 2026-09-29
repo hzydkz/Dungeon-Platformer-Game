@@ -61,4 +61,14 @@ export class Effects {
   sound(key: string, volume = 0.5): void {
     if (this.scene.cache.audio.exists(key)) this.scene.sound.play(key, { volume });
   }
+
+  /** 배경음 교체 (파일이 없으면 무음). 같은 곡이면 그대로 둔다 */
+  music(key: string, volume = 0.35): void {
+    const sm = this.scene.sound;
+    const current = sm.getAllPlaying().find((s) => s.key.startsWith('bgm_'));
+    if (current?.key === key) return;
+    current?.stop();
+    if (!this.scene.cache.audio.exists(key)) return;
+    sm.play(key, { loop: true, volume });
+  }
 }

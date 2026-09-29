@@ -1011,7 +1011,7 @@
         "wall": "#3b3346",
         "oneway": "#6b5b86",
         "spike": "#c8c8d0",
-        "breakable": "#5a4a3a",
+        "breakable": "#3b3346",
         "seal": "#aa2244"
       }
     },
@@ -1023,7 +1023,7 @@
         "wall": "#4a4238",
         "oneway": "#8a7a5a",
         "spike": "#c8c8d0",
-        "breakable": "#6a5a3a",
+        "breakable": "#4a4238",
         "seal": "#aa2244"
       }
     },
@@ -1035,7 +1035,7 @@
         "wall": "#1d1b33",
         "oneway": "#3a3470",
         "spike": "#c8c8d0",
-        "breakable": "#2a2250",
+        "breakable": "#1d1b33",
         "seal": "#aa2244"
       }
     }

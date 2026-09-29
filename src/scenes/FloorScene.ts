@@ -35,6 +35,7 @@ import { Player } from '../entities/Player';
 import { Portal } from '../entities/Portal';
 import { Projectile, type ProjectileOptions } from '../entities/Projectile';
 import { Effects } from '../fx/Effects';
+import { Scenery } from '../fx/Scenery';
 import { Controls, type InputFrame } from '../input/Controls';
 import { textStyle } from '../ui/text';
 import { buildTilemap, setMapTile } from './tilemap';
@@ -104,6 +105,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
   readonly arena = new Phaser.Geom.Rectangle();
   floorY = 0;
   private debugText?: Phaser.GameObjects.Text;
+  protected scenery!: Scenery;
   private readonly tmpRect = new Phaser.Geom.Rectangle();
 
   constructor(key: string = SceneKey.Floor) {
@@ -158,6 +160,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.label = this.kind === 'red' ? `빨간 던전 (${this.floorNumber}층)` : `${this.floorNumber}층 · ${this.theme.name}`;
     this.cameras.main.setBackgroundColor(this.theme.skyColor);
     this.fx = new Effects(this);
+    this.scenery = new Scenery(this, this.theme);
 
     const { layer } = buildTilemap(this, this.floorData.grid, AssetKey.tiles(this.theme.id));
     this.layer = layer;
@@ -180,6 +183,8 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.setupExploration();
 
     this.cameras.main.startFollow(this.player, true, 0.2, 0.2);
+    this.cameras.main.fadeIn(250, 0, 0, 0);
+    this.fx.music(this.theme.music);
     this.updateRoom();
     this.cameras.main.centerOn(this.player.x, this.player.y);
 
@@ -222,7 +227,26 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     if (this.floorData.redPortal) {
       this.portals.push(new Portal(this, this.floorData.redPortal.x, this.floorData.redPortal.y, 'red', AssetKey.portalRed));
     }
-    for (const p of this.portals) p.setDepth(5);
+    for (const p of this.portals) {
+      p.setDepth(5);
+      const color = p.texture.key === AssetKey.portalRed ? 0xff4040 : 0x5a9bff;
+      this.add
+        .particles(p.x, p.y - 16, AssetKey.particle, {
+          x: { min: -10, max: 10 },
+          y: { min: -14, max: 14 },
+          speedY: { min: -20, max: -8 },
+          lifespan: 900,
+          scale: { start: 0.8, end: 0 },
+          alpha: { start: 0.8, end: 0 },
+          tint: color,
+          frequency: p.kind === 'entrance' ? 220 : 90,
+        })
+        .setDepth(4);
+    }
+    // 입구 포탈에서 등장 (기획서 7.1)
+    this.fx.burst(this.player.x, this.player.y, 0x5a9bff, 16, 80);
+    this.player.setAlpha(0);
+    this.tweens.add({ targets: this.player, alpha: 1, duration: 350 });
   }
 
   protected setupCombat(): void {
@@ -468,6 +492,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
   protected startBossFight(): void {
     if (!this.boss) return;
     this.bossState = 'fighting';
+    this.fx.music('bgm_boss');
     this.setDoorTiles(Tile.Seal);
     this.boss.startFight();
     this.fx.shake(0.006, 400);
@@ -479,6 +504,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
   protected endBossFight(): void {
     if (!this.boss) return;
     this.bossState = 'defeated';
+    this.fx.music(this.theme.music);
     this.setDoorTiles(Tile.Empty);
     this.run.bossesKilled++;
     for (const shot of [...(this.enemyShots.getChildren() as Projectile[])]) shot.destroy();
@@ -863,6 +889,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
       return;
     }
     if (this.physics.world.isPaused) this.physics.resume();
+    this.scenery.update();
     const dt = Math.min(deltaMs / 1000, 1 / 20);
     const input = this.controls.update(dt);
     this.combat.update(dt, input);
