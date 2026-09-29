@@ -1,9 +1,11 @@
 import Phaser from 'phaser';
+import { DEBUG } from './config/debug';
 import { DISPLAY } from './config/display';
 import { MOVEMENT } from './config/movement';
 import { computeIntegerZoom } from './core/display';
 import { BootScene } from './scenes/BootScene';
-import { EmptyScene } from './scenes/EmptyScene';
+import { PreloadScene } from './scenes/PreloadScene';
+import { TestRoomScene } from './scenes/TestRoomScene';
 
 const currentZoom = (): number =>
   computeIntegerZoom(window.innerWidth, window.innerHeight, DISPLAY.width, DISPLAY.height);
@@ -21,17 +23,26 @@ const game = new Phaser.Game({
     autoCenter: Phaser.Scale.CENTER_BOTH,
     zoom: currentZoom(),
   },
+  input: {
+    gamepad: true,
+  },
   physics: {
     default: 'arcade',
     arcade: {
       gravity: { x: 0, y: MOVEMENT.gravity },
       debug: false,
+      tileBias: 16,
     },
   },
-  scene: [BootScene, EmptyScene],
+  scene: [BootScene, PreloadScene, TestRoomScene],
 });
 
 // 창 크기가 바뀌면 정수배 확대 배율을 다시 계산한다.
 window.addEventListener('resize', () => {
   game.scale.setZoom(currentZoom());
 });
+
+// 디버그 빌드: 자동 검증 스크립트가 게임 상태를 읽을 수 있게 노출
+if (DEBUG.enabled) {
+  (window as unknown as { __game: Phaser.Game }).__game = game;
+}

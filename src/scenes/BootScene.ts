@@ -18,6 +18,6 @@ export class BootScene extends Phaser.Scene {
       : null;
     const runSeed = fromQuery ?? generateRunSeed();
     this.registry.set(RegistryKey.runSeed, runSeed);
-    this.scene.start(SceneKey.Empty);
+    this.scene.start(SceneKey.Preload);
   }
 }

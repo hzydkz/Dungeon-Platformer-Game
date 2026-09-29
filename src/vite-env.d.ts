@@ -8,3 +8,14 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+declare module '*.txt?raw' {
+  const content: string;
+  export default content;
+}
+
+declare module 'virtual:asset-files' {
+  /** `public/assets/` 기준 상대 경로 목록 */
+  const files: readonly string[];
+  export default files;
+}

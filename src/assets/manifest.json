@@ -1,0 +1,1097 @@
+{
+  "version": 1,
+  "basePath": "assets/",
+  "images": [
+    {
+      "key": "bg_cave_far",
+      "file": "backgrounds/cave_far.png",
+      "width": 480,
+      "height": 270,
+      "color": "#000000"
+    },
+    {
+      "key": "bg_cave_mid",
+      "file": "backgrounds/cave_mid.png",
+      "width": 480,
+      "height": 270,
+      "color": "#000000"
+    },
+    {
+      "key": "bg_cave_near",
+      "file": "backgrounds/cave_near.png",
+      "width": 480,
+      "height": 270,
+      "color": "#000000"
+    },
+    {
+      "key": "fg_cave",
+      "file": "backgrounds/cave_fg.png",
+      "width": 480,
+      "height": 270,
+      "color": "#000000"
+    },
+    {
+      "key": "bg_ruins_far",
+      "file": "backgrounds/ruins_far.png",
+      "width": 480,
+      "height": 270,
+      "color": "#000000"
+    },
+    {
+      "key": "bg_ruins_mid",
+      "file": "backgrounds/ruins_mid.png",
+      "width": 480,
+      "height": 270,
+      "color": "#000000"
+    },
+    {
+      "key": "bg_ruins_near",
+      "file": "backgrounds/ruins_near.png",
+      "width": 480,
+      "height": 270,
+      "color": "#000000"
+    },
+    {
+      "key": "fg_ruins",
+      "file": "backgrounds/ruins_fg.png",
+      "width": 480,
+      "height": 270,
+      "color": "#000000"
+    },
+    {
+      "key": "bg_abyss_far",
+      "file": "backgrounds/abyss_far.png",
+      "width": 480,
+      "height": 270,
+      "color": "#000000"
+    },
+    {
+      "key": "bg_abyss_mid",
+      "file": "backgrounds/abyss_mid.png",
+      "width": 480,
+      "height": 270,
+      "color": "#000000"
+    },
+    {
+      "key": "bg_abyss_near",
+      "file": "backgrounds/abyss_near.png",
+      "width": 480,
+      "height": 270,
+      "color": "#000000"
+    },
+    {
+      "key": "fg_abyss",
+      "file": "backgrounds/abyss_fg.png",
+      "width": 480,
+      "height": 270,
+      "color": "#000000"
+    },
+    {
+      "key": "fx_particle",
+      "file": "sprites/fx_particle.png",
+      "width": 4,
+      "height": 4,
+      "color": "#ffffff"
+    }
+  ],
+  "spritesheets": [
+    {
+      "key": "player_warrior",
+      "file": "sprites/player_warrior.png",
+      "frameWidth": 16,
+      "frameHeight": 24,
+      "frameCount": 12,
+      "color": "#f2f2f2",
+      "animations": {
+        "idle": {
+          "frames": [
+            0,
+            1
+          ],
+          "fps": 3,
+          "repeat": -1
+        },
+        "run": {
+          "frames": [
+            2,
+            3,
+            4,
+            5
+          ],
+          "fps": 10,
+          "repeat": -1
+        },
+        "jump": {
+          "frames": [
+            6
+          ],
+          "fps": 1,
+          "repeat": 0
+        },
+        "fall": {
+          "frames": [
+            7
+          ],
+          "fps": 1,
+          "repeat": 0
+        },
+        "attack": {
+          "frames": [
+            8,
+            9
+          ],
+          "fps": 16,
+          "repeat": 0
+        },
+        "hurt": {
+          "frames": [
+            10
+          ],
+          "fps": 1,
+          "repeat": 0
+        },
+        "skill": {
+          "frames": [
+            11
+          ],
+          "fps": 1,
+          "repeat": 0
+        }
+      }
+    },
+    {
+      "key": "player_rogue",
+      "file": "sprites/player_rogue.png",
+      "frameWidth": 16,
+      "frameHeight": 24,
+      "frameCount": 12,
+      "color": "#d9f2d0",
+      "animations": {
+        "idle": {
+          "frames": [
+            0,
+            1
+          ],
+          "fps": 3,
+          "repeat": -1
+        },
+        "run": {
+          "frames": [
+            2,
+            3,
+            4,
+            5
+          ],
+          "fps": 10,
+          "repeat": -1
+        },
+        "jump": {
+          "frames": [
+            6
+          ],
+          "fps": 1,
+          "repeat": 0
+        },
+        "fall": {
+          "frames": [
+            7
+          ],
+          "fps": 1,
+          "repeat": 0
+        },
+        "attack": {
+          "frames": [
+            8,
+            9
+          ],
+          "fps": 16,
+          "repeat": 0
+        },
+        "hurt": {
+          "frames": [
+            10
+          ],
+          "fps": 1,
+          "repeat": 0
+        },
+        "skill": {
+          "frames": [
+            11
+          ],
+          "fps": 1,
+          "repeat": 0
+        }
+      }
+    },
+    {
+      "key": "player_archer",
+      "file": "sprites/player_archer.png",
+      "frameWidth": 16,
+      "frameHeight": 24,
+      "frameCount": 12,
+      "color": "#f2ecd0",
+      "animations": {
+        "idle": {
+          "frames": [
+            0,
+            1
+          ],
+          "fps": 3,
+          "repeat": -1
+        },
+        "run": {
+          "frames": [
+            2,
+            3,
+            4,
+            5
+          ],
+          "fps": 10,
+          "repeat": -1
+        },
+        "jump": {
+          "frames": [
+            6
+          ],
+          "fps": 1,
+          "repeat": 0
+        },
+        "fall": {
+          "frames": [
+            7
+          ],
+          "fps": 1,
+          "repeat": 0
+        },
+        "attack": {
+          "frames": [
+            8,
+            9
+          ],
+          "fps": 16,
+          "repeat": 0
+        },
+        "hurt": {
+          "frames": [
+            10
+          ],
+          "fps": 1,
+          "repeat": 0
+        },
+        "skill": {
+          "frames": [
+            11
+          ],
+          "fps": 1,
+          "repeat": 0
+        }
+      }
+    },
+    {
+      "key": "player_mage",
+      "file": "sprites/player_mage.png",
+      "frameWidth": 16,
+      "frameHeight": 24,
+      "frameCount": 12,
+      "color": "#d8dcf7",
+      "animations": {
+        "idle": {
+          "frames": [
+            0,
+            1
+          ],
+          "fps": 3,
+          "repeat": -1
+        },
+        "run": {
+          "frames": [
+            2,
+            3,
+            4,
+            5
+          ],
+          "fps": 10,
+          "repeat": -1
+        },
+        "jump": {
+          "frames": [
+            6
+          ],
+          "fps": 1,
+          "repeat": 0
+        },
+        "fall": {
+          "frames": [
+            7
+          ],
+          "fps": 1,
+          "repeat": 0
+        },
+        "attack": {
+          "frames": [
+            8,
+            9
+          ],
+          "fps": 16,
+          "repeat": 0
+        },
+        "hurt": {
+          "frames": [
+            10
+          ],
+          "fps": 1,
+          "repeat": 0
+        },
+        "skill": {
+          "frames": [
+            11
+          ],
+          "fps": 1,
+          "repeat": 0
+        }
+      }
+    },
+    {
+      "key": "monster_slime",
+      "file": "sprites/monster_slime.png",
+      "frameWidth": 16,
+      "frameHeight": 12,
+      "frameCount": 5,
+      "color": "#e04848",
+      "animations": {
+        "move": {
+          "frames": [
+            0,
+            1
+          ],
+          "fps": 6,
+          "repeat": -1
+        },
+        "attack": {
+          "frames": [
+            2,
+            3
+          ],
+          "fps": 8,
+          "repeat": 0
+        },
+        "hurt": {
+          "frames": [
+            4
+          ],
+          "fps": 1,
+          "repeat": 0
+        }
+      }
+    },
+    {
+      "key": "monster_bat",
+      "file": "sprites/monster_bat.png",
+      "frameWidth": 16,
+      "frameHeight": 12,
+      "frameCount": 5,
+      "color": "#c03a5a",
+      "animations": {
+        "move": {
+          "frames": [
+            0,
+            1
+          ],
+          "fps": 6,
+          "repeat": -1
+        },
+        "attack": {
+          "frames": [
+            2,
+            3
+          ],
+          "fps": 8,
+          "repeat": 0
+        },
+        "hurt": {
+          "frames": [
+            4
+          ],
+          "fps": 1,
+          "repeat": 0
+        }
+      }
+    },
+    {
+      "key": "monster_spitter",
+      "file": "sprites/monster_spitter.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "frameCount": 5,
+      "color": "#e0602a",
+      "animations": {
+        "move": {
+          "frames": [
+            0,
+            1
+          ],
+          "fps": 6,
+          "repeat": -1
+        },
+        "attack": {
+          "frames": [
+            2,
+            3
+          ],
+          "fps": 8,
+          "repeat": 0
+        },
+        "hurt": {
+          "frames": [
+            4
+          ],
+          "fps": 1,
+          "repeat": 0
+        }
+      }
+    },
+    {
+      "key": "monster_knight",
+      "file": "sprites/monster_knight.png",
+      "frameWidth": 16,
+      "frameHeight": 24,
+      "frameCount": 5,
+      "color": "#d0402a",
+      "animations": {
+        "move": {
+          "frames": [
+            0,
+            1
+          ],
+          "fps": 6,
+          "repeat": -1
+        },
+        "attack": {
+          "frames": [
+            2,
+            3
+          ],
+          "fps": 8,
+          "repeat": 0
+        },
+        "hurt": {
+          "frames": [
+            4
+          ],
+          "fps": 1,
+          "repeat": 0
+        }
+      }
+    },
+    {
+      "key": "monster_wisp",
+      "file": "sprites/monster_wisp.png",
+      "frameWidth": 12,
+      "frameHeight": 12,
+      "frameCount": 5,
+      "color": "#ff6f8f",
+      "animations": {
+        "move": {
+          "frames": [
+            0,
+            1
+          ],
+          "fps": 6,
+          "repeat": -1
+        },
+        "attack": {
+          "frames": [
+            2,
+            3
+          ],
+          "fps": 8,
+          "repeat": 0
+        },
+        "hurt": {
+          "frames": [
+            4
+          ],
+          "fps": 1,
+          "repeat": 0
+        }
+      }
+    },
+    {
+      "key": "monster_turret",
+      "file": "sprites/monster_turret.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "frameCount": 5,
+      "color": "#b03030",
+      "animations": {
+        "move": {
+          "frames": [
+            0,
+            1
+          ],
+          "fps": 6,
+          "repeat": -1
+        },
+        "attack": {
+          "frames": [
+            2,
+            3
+          ],
+          "fps": 8,
+          "repeat": 0
+        },
+        "hurt": {
+          "frames": [
+            4
+          ],
+          "fps": 1,
+          "repeat": 0
+        }
+      }
+    },
+    {
+      "key": "monster_crawler",
+      "file": "sprites/monster_crawler.png",
+      "frameWidth": 20,
+      "frameHeight": 12,
+      "frameCount": 5,
+      "color": "#c02850",
+      "animations": {
+        "move": {
+          "frames": [
+            0,
+            1
+          ],
+          "fps": 6,
+          "repeat": -1
+        },
+        "attack": {
+          "frames": [
+            2,
+            3
+          ],
+          "fps": 8,
+          "repeat": 0
+        },
+        "hurt": {
+          "frames": [
+            4
+          ],
+          "fps": 1,
+          "repeat": 0
+        }
+      }
+    },
+    {
+      "key": "monster_eye",
+      "file": "sprites/monster_eye.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "frameCount": 5,
+      "color": "#ff3d6e",
+      "animations": {
+        "move": {
+          "frames": [
+            0,
+            1
+          ],
+          "fps": 6,
+          "repeat": -1
+        },
+        "attack": {
+          "frames": [
+            2,
+            3
+          ],
+          "fps": 8,
+          "repeat": 0
+        },
+        "hurt": {
+          "frames": [
+            4
+          ],
+          "fps": 1,
+          "repeat": 0
+        }
+      }
+    },
+    {
+      "key": "monster_caster",
+      "file": "sprites/monster_caster.png",
+      "frameWidth": 16,
+      "frameHeight": 24,
+      "frameCount": 5,
+      "color": "#a02060",
+      "animations": {
+        "move": {
+          "frames": [
+            0,
+            1
+          ],
+          "fps": 6,
+          "repeat": -1
+        },
+        "attack": {
+          "frames": [
+            2,
+            3
+          ],
+          "fps": 8,
+          "repeat": 0
+        },
+        "hurt": {
+          "frames": [
+            4
+          ],
+          "fps": 1,
+          "repeat": 0
+        }
+      }
+    },
+    {
+      "key": "boss_cave",
+      "file": "sprites/boss_cave.png",
+      "frameWidth": 64,
+      "frameHeight": 48,
+      "frameCount": 8,
+      "color": "#9b59d0",
+      "animations": {
+        "idle": {
+          "frames": [
+            0,
+            1
+          ],
+          "fps": 3,
+          "repeat": -1
+        },
+        "telegraph": {
+          "frames": [
+            2,
+            3
+          ],
+          "fps": 8,
+          "repeat": -1
+        },
+        "attack": {
+          "frames": [
+            4,
+            5
+          ],
+          "fps": 10,
+          "repeat": -1
+        },
+        "recover": {
+          "frames": [
+            6
+          ],
+          "fps": 1,
+          "repeat": 0
+        },
+        "hurt": {
+          "frames": [
+            7
+          ],
+          "fps": 1,
+          "repeat": 0
+        }
+      }
+    },
+    {
+      "key": "boss_ruins",
+      "file": "sprites/boss_ruins.png",
+      "frameWidth": 40,
+      "frameHeight": 56,
+      "frameCount": 8,
+      "color": "#8e44ad",
+      "animations": {
+        "idle": {
+          "frames": [
+            0,
+            1
+          ],
+          "fps": 3,
+          "repeat": -1
+        },
+        "telegraph": {
+          "frames": [
+            2,
+            3
+          ],
+          "fps": 8,
+          "repeat": -1
+        },
+        "attack": {
+          "frames": [
+            4,
+            5
+          ],
+          "fps": 10,
+          "repeat": -1
+        },
+        "recover": {
+          "frames": [
+            6
+          ],
+          "fps": 1,
+          "repeat": 0
+        },
+        "hurt": {
+          "frames": [
+            7
+          ],
+          "fps": 1,
+          "repeat": 0
+        }
+      }
+    },
+    {
+      "key": "boss_abyss",
+      "file": "sprites/boss_abyss.png",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "frameCount": 8,
+      "color": "#7d3cff",
+      "animations": {
+        "idle": {
+          "frames": [
+            0,
+            1
+          ],
+          "fps": 3,
+          "repeat": -1
+        },
+        "telegraph": {
+          "frames": [
+            2,
+            3
+          ],
+          "fps": 8,
+          "repeat": -1
+        },
+        "attack": {
+          "frames": [
+            4,
+            5
+          ],
+          "fps": 10,
+          "repeat": -1
+        },
+        "recover": {
+          "frames": [
+            6
+          ],
+          "fps": 1,
+          "repeat": 0
+        },
+        "hurt": {
+          "frames": [
+            7
+          ],
+          "fps": 1,
+          "repeat": 0
+        }
+      }
+    },
+    {
+      "key": "boss_final",
+      "file": "sprites/boss_final.png",
+      "frameWidth": 72,
+      "frameHeight": 80,
+      "frameCount": 8,
+      "color": "#b04fff",
+      "animations": {
+        "idle": {
+          "frames": [
+            0,
+            1
+          ],
+          "fps": 3,
+          "repeat": -1
+        },
+        "telegraph": {
+          "frames": [
+            2,
+            3
+          ],
+          "fps": 8,
+          "repeat": -1
+        },
+        "attack": {
+          "frames": [
+            4,
+            5
+          ],
+          "fps": 10,
+          "repeat": -1
+        },
+        "recover": {
+          "frames": [
+            6
+          ],
+          "fps": 1,
+          "repeat": 0
+        },
+        "hurt": {
+          "frames": [
+            7
+          ],
+          "fps": 1,
+          "repeat": 0
+        }
+      }
+    },
+    {
+      "key": "portal_blue",
+      "file": "sprites/portal_blue.png",
+      "frameWidth": 24,
+      "frameHeight": 32,
+      "frameCount": 4,
+      "color": "#3a7bff",
+      "animations": {
+        "idle": {
+          "frames": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "fps": 8,
+          "repeat": -1
+        }
+      }
+    },
+    {
+      "key": "portal_red",
+      "file": "sprites/portal_red.png",
+      "frameWidth": 24,
+      "frameHeight": 32,
+      "frameCount": 4,
+      "color": "#ff3030",
+      "animations": {
+        "idle": {
+          "frames": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "fps": 8,
+          "repeat": -1
+        }
+      }
+    },
+    {
+      "key": "chest",
+      "file": "sprites/chest.png",
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "frameCount": 2,
+      "color": "#d4a017",
+      "animations": {
+        "closed": {
+          "frames": [
+            0
+          ],
+          "fps": 1,
+          "repeat": 0
+        },
+        "open": {
+          "frames": [
+            1
+          ],
+          "fps": 1,
+          "repeat": 0
+        }
+      }
+    },
+    {
+      "key": "altar",
+      "file": "sprites/altar.png",
+      "frameWidth": 16,
+      "frameHeight": 24,
+      "frameCount": 2,
+      "color": "#6fd6c8",
+      "animations": {
+        "idle": {
+          "frames": [
+            0
+          ],
+          "fps": 1,
+          "repeat": 0
+        },
+        "used": {
+          "frames": [
+            1
+          ],
+          "fps": 1,
+          "repeat": 0
+        }
+      }
+    },
+    {
+      "key": "fx_slash",
+      "file": "sprites/fx_slash.png",
+      "frameWidth": 32,
+      "frameHeight": 24,
+      "frameCount": 3,
+      "color": "#ffffff",
+      "animations": {
+        "play": {
+          "frames": [
+            0,
+            1,
+            2
+          ],
+          "fps": 24,
+          "repeat": 0
+        }
+      }
+    },
+    {
+      "key": "proj_arrow",
+      "file": "sprites/proj_arrow.png",
+      "frameWidth": 12,
+      "frameHeight": 4,
+      "frameCount": 1,
+      "color": "#f5e6b0",
+      "animations": {}
+    },
+    {
+      "key": "proj_orb",
+      "file": "sprites/proj_orb.png",
+      "frameWidth": 10,
+      "frameHeight": 10,
+      "frameCount": 2,
+      "color": "#7fa8ff",
+      "animations": {
+        "fly": {
+          "frames": [
+            0,
+            1
+          ],
+          "fps": 10,
+          "repeat": -1
+        }
+      }
+    },
+    {
+      "key": "proj_enemy",
+      "file": "sprites/proj_enemy.png",
+      "frameWidth": 6,
+      "frameHeight": 6,
+      "frameCount": 1,
+      "color": "#ff5050",
+      "animations": {}
+    },
+    {
+      "key": "proj_boss",
+      "file": "sprites/proj_boss.png",
+      "frameWidth": 10,
+      "frameHeight": 10,
+      "frameCount": 1,
+      "color": "#e070ff",
+      "animations": {}
+    },
+    {
+      "key": "pickup_heal",
+      "file": "sprites/pickup_heal.png",
+      "frameWidth": 8,
+      "frameHeight": 8,
+      "frameCount": 1,
+      "color": "#50e070",
+      "animations": {}
+    }
+  ],
+  "tilesets": [
+    {
+      "key": "tiles_cave",
+      "file": "tiles/cave.png",
+      "tileSize": 16,
+      "tiles": {
+        "wall": "#3b3346",
+        "oneway": "#6b5b86",
+        "spike": "#c8c8d0",
+        "breakable": "#5a4a3a",
+        "seal": "#aa2244"
+      }
+    },
+    {
+      "key": "tiles_ruins",
+      "file": "tiles/ruins.png",
+      "tileSize": 16,
+      "tiles": {
+        "wall": "#4a4238",
+        "oneway": "#8a7a5a",
+        "spike": "#c8c8d0",
+        "breakable": "#6a5a3a",
+        "seal": "#aa2244"
+      }
+    },
+    {
+      "key": "tiles_abyss",
+      "file": "tiles/abyss.png",
+      "tileSize": 16,
+      "tiles": {
+        "wall": "#1d1b33",
+        "oneway": "#3a3470",
+        "spike": "#c8c8d0",
+        "breakable": "#2a2250",
+        "seal": "#aa2244"
+      }
+    }
+  ],
+  "audio": [
+    {
+      "key": "sfx_jump",
+      "file": "audio/sfx_jump.mp3"
+    },
+    {
+      "key": "sfx_attack",
+      "file": "audio/sfx_attack.mp3"
+    },
+    {
+      "key": "sfx_hit",
+      "file": "audio/sfx_hit.mp3"
+    },
+    {
+      "key": "sfx_hurt",
+      "file": "audio/sfx_hurt.mp3"
+    },
+    {
+      "key": "sfx_portal",
+      "file": "audio/sfx_portal.mp3"
+    },
+    {
+      "key": "sfx_chest",
+      "file": "audio/sfx_chest.mp3"
+    },
+    {
+      "key": "sfx_boss_roar",
+      "file": "audio/sfx_boss_roar.mp3"
+    },
+    {
+      "key": "sfx_break",
+      "file": "audio/sfx_break.mp3"
+    },
+    {
+      "key": "sfx_select",
+      "file": "audio/sfx_select.mp3"
+    },
+    {
+      "key": "bgm_cave",
+      "file": "audio/bgm_cave.mp3"
+    },
+    {
+      "key": "bgm_ruins",
+      "file": "audio/bgm_ruins.mp3"
+    },
+    {
+      "key": "bgm_abyss",
+      "file": "audio/bgm_abyss.mp3"
+    },
+    {
+      "key": "bgm_boss",
+      "file": "audio/bgm_boss.mp3"
+    }
+  ]
+}
