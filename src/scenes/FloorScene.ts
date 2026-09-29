@@ -16,15 +16,20 @@ import { lineOfSight } from '../core/combat/los';
 import type { Stats } from '../core/combat/stats';
 import { generateFloor, type FloorKind, type GeneratedFloor, type TilePos } from '../core/generation/floor';
 import { escapeTimeForLayout } from '../core/escape';
+import { rewardChoices, rollChest, type RewardSource } from '../core/loot';
+import { secretHintVisible } from '../core/secret';
 import { Exploration } from '../core/map/exploration';
 import { Rng, deriveSeed } from '../core/rng';
 import type { RunState } from '../core/run';
 import { Tile, getTile, isHazardTile, isOneWayTile, isSolidTile, setTile } from '../core/tiles';
 import { CATALOG } from '../data/catalog';
+import { REWARDS } from '../config/rewards';
+import { upgradeById, type UpgradeDef } from '../data/upgrades';
 import { monsterById, monsterTable } from '../data/monsters';
 import { roleById } from '../data/roles';
 import { bossForFloor } from '../data/bosses';
 import { Boss, type BossWorld } from '../entities/Boss';
+import { Chest } from '../entities/Chest';
 import { Monster, type MonsterWorld } from '../entities/Monster';
 import { Player } from '../entities/Player';
 import { Portal } from '../entities/Portal';
@@ -34,6 +39,7 @@ import { Controls, type InputFrame } from '../input/Controls';
 import { textStyle } from '../ui/text';
 import { buildTilemap, setMapTile } from './tilemap';
 import type { HudScene } from './HudScene';
+import type { RewardReceiver, RewardSceneData } from './RewardScene';
 import { RegistryKey, SceneKey } from './keys';
 
 export interface FloorSceneData {
@@ -60,7 +66,7 @@ export type BossFightState = 'waiting' | 'fighting' | 'defeated';
  * 층 씬: 절차 생성된 층을 탐사하고 전투한다.
  * 같은 클래스를 빨간 던전(다른 씬 키)에도 쓴다.
  */
-export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, MonsterWorld, BossWorld {
+export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, MonsterWorld, BossWorld, RewardReceiver {
   floorData!: GeneratedFloor;
   exploration!: Exploration;
   currentRoom = -1;
@@ -89,6 +95,12 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
   protected bossState: BossFightState = 'waiting';
   private bossWarned = false;
   escapeTimeLeft: number | null = null;
+  protected chests: Chest[] = [];
+  protected chestGroup!: Phaser.Physics.Arcade.StaticGroup;
+  protected altar: Phaser.GameObjects.Sprite | null = null;
+  private hintTimer = 0;
+  private hintedRooms = new Set<number>();
+  private trapNoticeRooms = new Set<number>();
   readonly arena = new Phaser.Geom.Rectangle();
   floorY = 0;
   private debugText?: Phaser.GameObjects.Text;
@@ -122,6 +134,11 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.bossState = 'waiting';
     this.bossWarned = false;
     this.escapeTimeLeft = null;
+    this.chests = [];
+    this.altar = null;
+    this.hintTimer = 0;
+    this.hintedRooms = new Set();
+    this.trapNoticeRooms = new Set();
   }
 
   create(): void {
@@ -160,6 +177,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.setupCombat();
     this.spawnMonsters();
     this.setupBoss();
+    this.setupExploration();
 
     this.cameras.main.startFollow(this.player, true, 0.2, 0.2);
     this.updateRoom();
@@ -227,6 +245,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     const shotVsTile = (shot: unknown, tile: unknown) => {
       const p = shot as Projectile;
       const t = tile as Phaser.Tilemaps.Tile;
+      if (p.owner === 'player' && t.index === Tile.Breakable) this.breakWall(t.x, t.y);
       return !p.ghost && isSolidTile(t.index);
     };
     this.physics.add.collider(this.playerShots, this.layer, (shot) => this.expireShot(shot as Projectile), shotVsTile);
@@ -264,6 +283,132 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
       m.setActiveInRoom(false);
       this.monsters.push(m);
     }
+  }
+
+  // ---------- 탐사: 상자, 비밀 벽, 제단 (기획서 5.6) ----------
+
+  protected setupExploration(): void {
+    this.chestGroup = this.physics.add.staticGroup();
+    for (const c of this.floorData.chests) {
+      const chest = new Chest(this, c.x, c.y, c.room, c.secret);
+      this.chests.push(chest);
+      const zone = this.add.zone(chest.x, chest.y - 8, 16, 16);
+      this.chestGroup.add(zone);
+      zone.setData('chest', chest);
+    }
+    this.physics.add.overlap(this.playerShots, this.chestGroup, (shot, zone) => {
+      const chest = (zone as Phaser.GameObjects.Zone).getData('chest') as Chest;
+      if (chest.alive) {
+        this.openChest(chest);
+        this.expireShot(shot as Projectile);
+      }
+    });
+    const a = this.floorData.altar;
+    if (a) {
+      const s = DISPLAY.tileSize;
+      this.altar = this.add.sprite(a.x * s + s / 2, (a.y + 1) * s, AssetKey.altar, 0).setOrigin(0.5, 1).setDepth(5);
+      this.altar.setData('used', false);
+    }
+  }
+
+  protected openChest(chest: Chest): void {
+    if (!chest.hurt()) return;
+    this.fx.sound('sfx_chest', 0.6);
+    this.fx.burst(chest.x, chest.y - 8, 0xffd060, 12, 90);
+    const items = rollChest(this.lootRng, this.stats, this.run.character.role);
+    const lines: string[] = [];
+    for (const it of items) {
+      if (it.kind === 'heal') {
+        this.combat.hp = applyHeal(this.stats, this.combat.hp, this.stats.maxHp * it.ratio);
+        lines.push('회복');
+      } else {
+        this.run.upgrades.push(it.id);
+        lines.push(upgradeById(it.id).name);
+      }
+    }
+    this.refreshStats();
+    this.hud()?.notify(`상자: ${lines.join(', ')}`, 2.5, '#ffe080');
+  }
+
+  /** 비밀 벽: 근접 공격 판정에 닿으면 부서진다 */
+  hitTiles(rect: Phaser.Geom.Rectangle): void {
+    const s = DISPLAY.tileSize;
+    for (let ty = Math.floor(rect.top / s); ty <= Math.floor((rect.bottom - 0.01) / s); ty++) {
+      for (let tx = Math.floor(rect.left / s); tx <= Math.floor((rect.right - 0.01) / s); tx++) {
+        if (getTile(this.grid, tx, ty) === Tile.Breakable) this.breakWall(tx, ty);
+      }
+    }
+    for (const c of this.chests) if (c.alive && c.room === this.currentRoom && Phaser.Geom.Intersects.RectangleToRectangle(rect, c.hitRect(this.tmpRect))) this.openChest(c);
+  }
+
+  /** 비밀 벽 한 칸을 치면 이어진 비밀 벽이 모두 부서진다 (원거리 역할군도 통로를 열 수 있게) */
+  protected breakWall(tx: number, ty: number): void {
+    const s = DISPLAY.tileSize;
+    const stack: [number, number][] = [[tx, ty]];
+    while (stack.length) {
+      const [x, y] = stack.pop()!;
+      if (getTile(this.grid, x, y) !== Tile.Breakable) continue;
+      setTile(this.grid, x, y, Tile.Empty);
+      setMapTile(this.layer, x, y, Tile.Empty);
+      this.fx.burst(x * s + s / 2, y * s + s / 2, 0xa08a6a, 10, 80);
+      stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+    }
+    this.fx.sound('sfx_break', 0.6);
+    this.fx.shake(0.003, 80);
+  }
+
+  /** 제단 (환경 이벤트): 현재 체력 일부를 바치고 강화 하나 */
+  protected useAltar(): void {
+    if (!this.altar || this.altar.getData('used')) return;
+    const cost = Math.max(1, Math.round(this.combat.hp * REWARDS.altarHpCost));
+    if (this.combat.hp - cost < 1) {
+      this.hud()?.notify('체력이 부족하다', 1.5, '#ff8080');
+      return;
+    }
+    this.altar.setData('used', true);
+    const anim = `${AssetKey.altar}_used`;
+    if (this.anims.exists(anim)) this.altar.play(anim);
+    this.combat.hp -= cost;
+    this.fx.burst(this.altar.x, this.altar.y - 12, 0x6fd6c8, 16, 90);
+    const [u] = rewardChoices(this.lootRng, this.stats, this.run.character.role, 'altar');
+    if (u) {
+      this.run.upgrades.push(u.id);
+      this.refreshStats();
+      this.hud()?.notify(`제단에 피를 바쳤다: ${u.name}`, 3, '#80f0e0');
+    }
+  }
+
+  /** 성격 '호기심': 비밀 벽 근처에서 반짝임 힌트 */
+  protected updateSecretHint(dt: number): void {
+    this.hintTimer -= dt;
+    if (this.hintTimer > 0 || this.stats.secretHint <= 0) return;
+    this.hintTimer = 0.6;
+    const walls = this.floorData.secretWalls.filter((w) => w.room === this.currentRoom && getTile(this.grid, w.x, w.y) === Tile.Breakable);
+    if (!secretHintVisible(this.stats, this.playerTile, walls)) return;
+    const s = DISPLAY.tileSize;
+    for (const w of walls) this.fx.burst(w.x * s + s / 2, w.y * s + s / 2, 0xfff0a0, 3, 20);
+    if (!this.hintedRooms.has(this.currentRoom)) {
+      this.hintedRooms.add(this.currentRoom);
+      this.hud()?.notify('무언가 숨겨져 있는 것 같다…', 2, '#fff0a0');
+    }
+  }
+
+  // ---------- 보상 (기획서 8.7) ----------
+
+  protected openReward(source: RewardSource): void {
+    const choices = rewardChoices(this.lootRng, this.stats, this.run.character.role, source);
+    if (choices.length === 0) return;
+    this.scene.pause();
+    this.scene.launch(SceneKey.Reward, {
+      choices: choices.map((u) => u.id),
+      title: source === 'redBoss' ? '상위 강화 선택' : '강화 선택',
+      resume: this.scene.key,
+    } satisfies RewardSceneData);
+    this.scene.bringToTop(SceneKey.Reward);
+  }
+
+  onRewardChosen(u: UpgradeDef): void {
+    this.hud()?.notify(`강화: ${u.name}`, 2, '#ffe8a0');
   }
 
   // ---------- 보스 ----------
@@ -356,7 +501,14 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
       });
       return;
     }
-    if (this.kind === 'red') this.startEscapeTimer();
+    if (this.kind === 'red') {
+      // 빨간 던전 추가 보상: 체력 회복 + 상위 등급 선택지
+      this.combat.hp = applyHeal(this.stats, this.combat.hp, this.stats.maxHp * REWARDS.redBossHealRatio);
+      this.startEscapeTimer();
+    }
+    this.time.delayedCall(1300, () => {
+      if (!this.ending) this.openReward(this.kind === 'red' ? 'redBoss' : 'floorBoss');
+    });
   }
 
   protected startEscapeTimer(): void {
@@ -418,10 +570,15 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
   *targets(): Iterable<Hittable> {
     for (const m of this.monsters) if (m.alive && m.room === this.currentRoom) yield m;
     if (this.boss && this.boss.alive && this.bossState === 'fighting') yield this.boss;
+    for (const c of this.chests) if (c.alive && c.room === this.currentRoom) yield c;
   }
 
   damageTarget(target: Hittable, base: number, fromX: number): void {
     if (!target.alive) return;
+    if (target instanceof Chest) {
+      this.openChest(target);
+      return;
+    }
     const hit = outgoingDamage(this.stats, base, this.combat.hp, this.lootRng);
     const killed = target.hurt(hit.damage, fromX);
     this.fx.hitSpark(target.x, target.y - 6);
@@ -480,10 +637,6 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
 
   canSee(fromX: number, fromY: number, toX: number, toY: number): boolean {
     return lineOfSight(this.grid, DISPLAY.tileSize, fromX, fromY, toX, toY);
-  }
-
-  hitTiles(_rect: Phaser.Geom.Rectangle): void {
-    // M7: 비밀 벽
   }
 
   onPlayerDeath(cause: string): void {
@@ -557,10 +710,16 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
 
   protected onEnterRoom(room: number): void {
     this.exploration.enter(room, this.stats.revealAdjacent > 0);
+    if (this.floorData.rooms[room]?.trap && !this.trapNoticeRooms.has(room)) {
+      this.trapNoticeRooms.add(room);
+      this.hud()?.notify('함정 방: 가시에 주의', 1.8, '#ff9060');
+    }
   }
 
   protected handlePortals(input: InputFrame): void {
     if (!input.upPressed) return;
+    for (const c of this.chests) if (c.alive && c.room === this.currentRoom && c.contains(this.player.x, this.player.y)) this.openChest(c);
+    if (this.altar && Math.abs(this.altar.x - this.player.x) < 12 && Math.abs(this.altar.y - 12 - this.player.y) < 20) this.useAltar();
     for (const p of this.portals) {
       if (!p.active || !p.contains(this.player.x, this.player.y)) continue;
       if (p.kind === 'exit') this.goToNextFloor();
@@ -719,6 +878,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     for (const p of this.enemyShots.getChildren() as Projectile[]) p.tick(dt);
     if (this.boss && this.bossState === 'fighting') this.boss.tick(dt, this);
     this.updateEscapeTimer(dt);
+    this.updateSecretHint(dt);
     this.updateRoom();
     this.checkBoss();
     this.handlePortals(input);

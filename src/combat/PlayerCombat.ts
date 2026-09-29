@@ -237,6 +237,7 @@ export class PlayerCombat {
           this.host.fx.ring(cx, cy, sk.radius, 0x7fa8ff);
           this.host.fx.burst(cx, cy, 0x9fc0ff, 14, 120);
           this.host.fx.shake(0.003, 100);
+          this.host.hitTiles(new Phaser.Geom.Rectangle(cx - sk.radius / 2, cy - sk.radius / 2, sk.radius, sk.radius));
           for (const t of this.host.targets()) {
             if (!t.alive) continue;
             const r = t.hitRect(this.tmp);
