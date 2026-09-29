@@ -41,7 +41,12 @@ export class Controls {
     if (kb) {
       for (const [action, names] of Object.entries(INPUT.keys) as [ActionName, readonly string[]][]) {
         const keys = names.map((n) => kb.addKey(n, true));
-        for (const k of keys) k.on('down', () => this.latched.add(action));
+        for (const k of keys) {
+          k.on('down', () => {
+            this.latched.add(action);
+            if (action === 'up') this.latched.add('menuUp');
+          });
+        }
         this.keys.set(action, keys);
       }
     }
@@ -103,14 +108,16 @@ export class Controls {
     const confirmE = this.edge('confirm', confirm);
     const cancelE = this.edge('cancel', cancel);
 
-    // 메뉴 이동: 처음 누를 때 한 번, 계속 누르면 반복 간격마다
-    let menuX = 0;
-    let menuY = 0;
-    if (moveX !== this.lastMenuDir.x || moveY !== this.lastMenuDir.y) {
-      menuX = moveX;
-      menuY = moveY;
+    // 메뉴 이동: 새로 누를 때(짧은 탭 포함) 한 번, 계속 누르면 반복 간격마다
+    const leftE = this.edge('left', left);
+    const rightE = this.edge('right', right);
+    const upMenuE = this.edge('menuUp', up);
+    const downE = this.edge('down', down);
+    let menuX = (rightE.pressed ? 1 : 0) - (leftE.pressed ? 1 : 0);
+    let menuY = (downE.pressed ? 1 : 0) - (upMenuE.pressed ? 1 : 0);
+    if (menuX !== 0 || menuY !== 0) {
       this.menuRepeatTimer = g.menuRepeat * 1.6;
-    } else if (moveX !== 0 || moveY !== 0) {
+    } else if ((moveX !== 0 || moveY !== 0) && moveX === this.lastMenuDir.x && moveY === this.lastMenuDir.y) {
       this.menuRepeatTimer -= dt;
       if (this.menuRepeatTimer <= 0) {
         menuX = moveX;

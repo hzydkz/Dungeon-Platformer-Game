@@ -15,6 +15,8 @@ export interface Stats {
   attackSpeed: number;
   /** 스킬 쿨타임 배율 */
   skillCooldown: number;
+  /** 스킬 자원(마나) 소모 배율 */
+  skillCost: number;
   /** 피격 무적 시간 배율 */
   invulnTime: number;
   /** 적 처치 시 회복량 (최대 체력 대비 비율) */
@@ -72,6 +74,7 @@ export const DEFAULT_STATS: Readonly<Stats> = {
   moveSpeed: 1,
   attackSpeed: 1,
   skillCooldown: 1,
+  skillCost: 1,
   invulnTime: 1,
   healOnKill: 0,
   lowHpThreshold: 0.25,

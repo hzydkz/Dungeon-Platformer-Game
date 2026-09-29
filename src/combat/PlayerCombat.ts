@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { AssetKey } from '../assets/keys';
 import { COMBAT } from '../config/combat';
-import { incomingDamage, invulnTime, thornsDamage } from '../core/combat/damage';
+import { incomingDamage, invulnTime, regenAmount, thornsDamage } from '../core/combat/damage';
 import type { Stats } from '../core/combat/stats';
 import type { MeleeAttack, RoleDef } from '../data/roles';
 import type { Player } from '../entities/Player';
@@ -79,7 +79,7 @@ export class PlayerCombat {
     const stats = this.stats;
     this.attackCooldown -= dt;
     this.skillCooldown -= dt;
-    if (stats.regenPerSecond > 0) this.hp = Math.min(stats.maxHp, this.hp + stats.maxHp * stats.regenPerSecond * dt);
+    if (this.hp > 0) this.hp = Math.min(stats.maxHp, this.hp + regenAmount(stats, dt));
     if (this.role.maxMana > 0) this.mana = Math.min(this.role.maxMana, this.mana + this.role.manaRegen * dt);
 
     const hurtLocked = this.now < this.player.controlLockUntil && !this.dashing;
@@ -228,8 +228,9 @@ export class PlayerCombat {
         break;
       }
       case 'explosion': {
-        if (input.skillPressed && this.skillCooldown <= 0 && this.mana >= sk.manaCost) {
-          this.mana -= sk.manaCost;
+        const cost = sk.manaCost * this.stats.skillCost;
+        if (input.skillPressed && this.skillCooldown <= 0 && this.mana >= cost) {
+          this.mana -= cost;
           this.skillCooldown = sk.cooldown * this.stats.skillCooldown;
           const cx = this.player.x + this.player.facing * sk.offset;
           const cy = this.player.y;

@@ -11,7 +11,7 @@ import { MOVEMENT, SPIKE_HITBOX } from '../config/movement';
 import { PROGRESSION } from '../config/progression';
 import { themeForFloor, type ThemeDef } from '../config/themes';
 import { characterStats } from '../core/character';
-import { applyHeal, healOnKill, lifesteal, monsterScale, outgoingDamage } from '../core/combat/damage';
+import { applyHeal, floorHeal, healOnKill, lifesteal, monsterScale, outgoingDamage } from '../core/combat/damage';
 import { lineOfSight } from '../core/combat/los';
 import type { Stats } from '../core/combat/stats';
 import { generateFloor, type FloorKind, type GeneratedFloor, type TilePos } from '../core/generation/floor';
@@ -580,8 +580,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.ending = true;
     this.fx.sound('sfx_portal', 0.6);
     this.run.floor = this.floorNumber + 1;
-    const healRatio = PROGRESSION.floorHealRatio + this.stats.floorHealBonus;
-    this.run.hp = applyHeal(this.stats, this.combat.hp, this.stats.maxHp * healRatio);
+    this.run.hp = floorHeal(this.stats, this.combat.hp);
     this.cameras.main.fadeOut(250, 0, 0, 0);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
       this.scene.restart({ floor: this.floorNumber + 1, kind: 'floor' } satisfies FloorSceneData);

@@ -1,13 +1,9 @@
 import Phaser from 'phaser';
-import type { RoleId } from '../assets/keys';
-import { DEBUG } from '../config/debug';
 import { DISPLAY } from '../config/display';
-import { Rng, deriveSeed } from '../core/rng';
-import { createRun } from '../core/run';
 import { generateRunSeed } from '../core/seed';
-import { ROLES } from '../data/roles';
 import { Controls } from '../input/Controls';
 import { textStyle } from '../ui/text';
+import type { CharacterSelectData } from './CharacterSelectScene';
 import { RegistryKey, SceneKey } from './keys';
 
 /** 타이틀: 시작 입력을 받으면 새 런 시드를 만들고 다음 단계로 */
@@ -43,12 +39,6 @@ export class TitleScene extends Phaser.Scene {
   private startRun(): void {
     const override = this.registry.get(RegistryKey.seedOverride) as number | null;
     const runSeed = override ?? generateRunSeed();
-    // 캐릭터 선택(M6) 전까지는 ?role= 또는 시드로 역할군을 정한다
-    const param = DEBUG.enabled ? new URLSearchParams(window.location.search).get('role') : null;
-    const role: RoleId = ROLES.some((r) => r.id === param)
-      ? (param as RoleId)
-      : new Rng(deriveSeed(runSeed, 'characters')).pick(ROLES).id;
-    this.registry.set(RegistryKey.run, createRun(runSeed, performance.now(), { role, trait: null, personality: null }));
-    this.scene.start(SceneKey.Floor, { floor: 1 });
+    this.scene.start(SceneKey.CharacterSelect, { runSeed } satisfies CharacterSelectData);
   }
 }

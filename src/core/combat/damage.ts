@@ -56,3 +56,13 @@ export function applyHeal(stats: Stats, hp: number, amount: number): number {
 export function invulnTime(stats: Stats): number {
   return COMBAT.player.invulnTime * stats.invulnTime;
 }
+
+/** 초당 재생으로 dt 동안 회복하는 양 */
+export function regenAmount(stats: Stats, dt: number): number {
+  return stats.maxHp * stats.regenPerSecond * dt;
+}
+
+/** 층 이동 회복 후 체력 (기획서 8.8: 최대 체력의 30% + 성격 보너스, 회복 배율 적용) */
+export function floorHeal(stats: Stats, hp: number): number {
+  return applyHeal(stats, hp, stats.maxHp * (PROGRESSION.floorHealRatio + stats.floorHealBonus));
+}
