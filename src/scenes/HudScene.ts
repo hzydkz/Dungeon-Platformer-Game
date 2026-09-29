@@ -20,6 +20,9 @@ export class HudScene extends Phaser.Scene {
   private floorLabel!: Phaser.GameObjects.Text;
   private showFull = false;
   private bars!: Phaser.GameObjects.Graphics;
+  private notice!: Phaser.GameObjects.Text;
+  private noticeUntil = 0;
+  private bossName!: Phaser.GameObjects.Text;
   private hpText!: Phaser.GameObjects.Text;
   private skillText!: Phaser.GameObjects.Text;
 
@@ -41,6 +44,32 @@ export class HudScene extends Phaser.Scene {
       .setOrigin(1, 0)
       .setDepth(10);
     this.createBars();
+    this.notice = this.add
+      .text(DISPLAY.width / 2, 40, '', textStyle('small', '#ffffff', { align: 'center', stroke: '#000000', strokeThickness: 3 }))
+      .setOrigin(0.5, 0)
+      .setDepth(30)
+      .setVisible(false);
+    this.bossName = this.add.text(DISPLAY.width / 2, DISPLAY.height - 26, '', textStyle('small', '#e0c8ff')).setOrigin(0.5, 0).setDepth(10);
+  }
+
+  /** 화면 상단 중앙 알림 (기획서 7.2: 빨간 포탈 알림 3초 등) */
+  notify(text: string, seconds: number, color = '#ffffff'): void {
+    this.notice.setText(text).setColor(color).setVisible(true).setAlpha(1);
+    this.noticeUntil = this.time.now + seconds * 1000;
+  }
+
+  private drawBossBar(src: HudSource): void {
+    const b = src.bossBar;
+    this.bossName.setVisible(!!b);
+    if (!b) return;
+    const g = this.bars;
+    const w = 220;
+    const x = (DISPLAY.width - w) / 2;
+    const y = DISPLAY.height - 12;
+    g.fillStyle(0x000000, 0.7).fillRect(x - 2, y - 2, w + 4, 8);
+    g.fillStyle(0x301040, 1).fillRect(x, y, w, 4);
+    g.fillStyle(0xa050e0, 1).fillRect(x, y, Math.round(w * Math.max(0, b.hp / b.maxHp)), 4);
+    this.bossName.setText(b.name);
   }
 
   private createBars(): void {
@@ -158,8 +187,14 @@ export class HudScene extends Phaser.Scene {
     const src = this.source();
     this.mini.clear();
     this.full.clear();
+    if (this.notice.visible) {
+      const left = this.noticeUntil - this.time.now;
+      if (left <= 0) this.notice.setVisible(false);
+      else if (left < 400) this.notice.setAlpha(left / 400);
+    }
     if (!src) return;
     this.drawBars(src);
+    this.drawBossBar(src);
     if (input.mapPressed) this.showFull = !this.showFull;
 
     const m = MAP.minimap;

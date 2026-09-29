@@ -18,10 +18,12 @@ import { generateFloor, type FloorKind, type GeneratedFloor, type TilePos } from
 import { Exploration } from '../core/map/exploration';
 import { Rng, deriveSeed } from '../core/rng';
 import type { RunState } from '../core/run';
-import { getTile, isHazardTile, isOneWayTile, isSolidTile } from '../core/tiles';
+import { Tile, getTile, isHazardTile, isOneWayTile, isSolidTile, setTile } from '../core/tiles';
 import { CATALOG } from '../data/catalog';
 import { monsterById, monsterTable } from '../data/monsters';
 import { roleById } from '../data/roles';
+import { bossForFloor } from '../data/bosses';
+import { Boss, type BossWorld } from '../entities/Boss';
 import { Monster, type MonsterWorld } from '../entities/Monster';
 import { Player } from '../entities/Player';
 import { Portal } from '../entities/Portal';
@@ -29,7 +31,8 @@ import { Projectile, type ProjectileOptions } from '../entities/Projectile';
 import { Effects } from '../fx/Effects';
 import { Controls, type InputFrame } from '../input/Controls';
 import { textStyle } from '../ui/text';
-import { buildTilemap } from './tilemap';
+import { buildTilemap, setMapTile } from './tilemap';
+import type { HudScene } from './HudScene';
 import { RegistryKey, SceneKey } from './keys';
 
 export interface FloorSceneData {
@@ -45,13 +48,16 @@ export interface HudSource {
   readonly playerTile: TilePos;
   readonly label: string;
   readonly combat: PlayerCombat;
+  readonly bossBar: { readonly name: string; readonly hp: number; readonly maxHp: number } | null;
 }
+
+export type BossFightState = 'waiting' | 'fighting' | 'defeated';
 
 /**
  * 층 씬: 절차 생성된 층을 탐사하고 전투한다.
  * 같은 클래스를 빨간 던전(다른 씬 키)에도 쓴다.
  */
-export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, MonsterWorld {
+export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, MonsterWorld, BossWorld {
   floorData!: GeneratedFloor;
   exploration!: Exploration;
   currentRoom = -1;
@@ -76,6 +82,11 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
   protected floorNumber = 1;
   protected kind: FloorKind = 'floor';
   protected ending = false;
+  protected boss: Boss | null = null;
+  protected bossState: BossFightState = 'waiting';
+  private bossWarned = false;
+  readonly arena = new Phaser.Geom.Rectangle();
+  floorY = 0;
   private debugText?: Phaser.GameObjects.Text;
   private readonly tmpRect = new Phaser.Geom.Rectangle();
 
@@ -103,6 +114,9 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.monsters = [];
     this.currentRoom = -1;
     this.ending = false;
+    this.boss = null;
+    this.bossState = 'waiting';
+    this.bossWarned = false;
   }
 
   create(): void {
@@ -137,6 +151,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.setupPortals();
     this.setupCombat();
     this.spawnMonsters();
+    this.setupBoss();
 
     this.cameras.main.startFollow(this.player, true, 0.2, 0.2);
     this.updateRoom();
@@ -222,10 +237,129 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     }
   }
 
+  // ---------- 보스 ----------
+
+  protected setupBoss(): void {
+    const s = DISPLAY.tileSize;
+    const b = this.floorData.boss;
+    const room = this.floorData.rooms[b.room]!;
+    this.arena.setTo(room.x * s, room.y * s, room.w * s, room.h * s);
+    this.floorY = (b.spawn.y + 1) * s;
+    const { def, tier } = bossForFloor(this.floorNumber, this.kind);
+    const rng = new Rng(deriveSeed(this.floorData.seed, 'boss'));
+    this.boss = new Boss(this, b.spawn.x * s + s / 2, this.floorY, def, tier, monsterScale(this.difficultyLevel), rng);
+    this.physics.add.collider(this.boss, this.layer, undefined, (_b, t) => {
+      const tile = t as Phaser.Tilemaps.Tile;
+      return !isOneWayTile(tile.index) || (this.boss !== null && this.boss.arcadeBody.velocity.y >= 0 && this.boss.arcadeBody.prev.y + this.boss.arcadeBody.height <= tile.pixelY + 2);
+    });
+    this.physics.add.overlap(this.player, this.boss, () => {
+      if (this.boss && this.boss.alive && this.boss.fighting) this.combat.hurt(this.boss.contactDamage, this.boss.x, this.boss.def.name, this.boss);
+    });
+  }
+
+  get bossBar(): HudSource['bossBar'] {
+    if (!this.boss || this.bossState !== 'fighting') return null;
+    return { name: this.boss.def.name, hp: this.boss.hp, maxHp: this.boss.maxHp };
+  }
+
+  hud(): HudScene | null {
+    const h = this.scene.get(SceneKey.Hud) as HudScene | null;
+    return h && h.scene.isActive() ? h : null;
+  }
+
+  protected setDoorTiles(tile: typeof Tile.Seal | typeof Tile.Empty): void {
+    for (const d of this.floorData.boss.doorTiles) {
+      setTile(this.floorData.grid, d.x, d.y, tile);
+      setMapTile(this.layer, d.x, d.y, tile);
+    }
+  }
+
+  /** 보스방 입장 경고, 입장 시 봉쇄와 전투 시작 */
+  protected checkBoss(): void {
+    if (!this.boss || this.bossState !== 'waiting') return;
+    const L = this.floorData.layout;
+    const s = DISPLAY.tileSize;
+    const doorX = this.floorData.boss.doorTiles[0]!.x * s;
+    if (this.currentRoom === L.bossGate) {
+      if (!this.bossWarned && Math.abs(this.player.x - doorX) < 8 * s) {
+        this.bossWarned = true;
+        this.hud()?.notify('보스방: 들어가면 보스를 처치할 때까지 나올 수 없습니다', 3, '#ffb060');
+      }
+    } else if (this.currentRoom !== L.boss) {
+      this.bossWarned = false;
+    }
+    if (this.currentRoom === L.boss && Math.abs(this.player.x - doorX) > 3 * s) this.startBossFight();
+  }
+
+  protected startBossFight(): void {
+    if (!this.boss) return;
+    this.bossState = 'fighting';
+    this.setDoorTiles(Tile.Seal);
+    this.boss.startFight();
+    this.fx.shake(0.006, 400);
+    this.fx.sound('sfx_boss_roar', 0.8);
+    this.fx.burst(this.boss.x, this.boss.y - 30, 0xa050e0, 24, 150);
+    this.hud()?.notify(this.boss.def.name, 2.5, '#d8a0ff');
+  }
+
+  protected endBossFight(): void {
+    if (!this.boss) return;
+    this.bossState = 'defeated';
+    this.setDoorTiles(Tile.Empty);
+    this.run.bossesKilled++;
+    for (const shot of [...(this.enemyShots.getChildren() as Projectile[])]) shot.destroy();
+    this.fx.shake(0.012, 600);
+    this.fx.burst(this.boss.x, this.boss.y - 30, 0xd0a0ff, 40, 200);
+    this.tweens.add({ targets: this.boss, alpha: 0, duration: 800 });
+    this.hud()?.notify(`${this.boss.def.name} 처치!`, 3, '#ffe080');
+    this.onBossDefeated();
+  }
+
+  /** 보스 처치 보상 등 (M5 최종 보스 클리어, M7 강화 선택) */
+  protected onBossDefeated(): void {}
+
+  fireBossShot(x: number, y: number, vx: number, vy: number, damage: number, opts: { homing?: boolean; scaleY?: number; lifetime?: number } = {}): void {
+    const p = new Projectile(this, {
+      owner: 'enemy',
+      texture: AssetKey.bossShot,
+      x,
+      y,
+      vx,
+      vy,
+      damage,
+      lifetime: opts.lifetime ?? 3,
+      ...(opts.homing ? { homing: { target: this.player, turnRate: 1.4 } } : {}),
+    });
+    if (opts.scaleY) p.setScale(1, opts.scaleY);
+    this.enemyShots.add(p);
+    const body = p.body as Phaser.Physics.Arcade.Body;
+    if (opts.scaleY) body.setSize(p.width, p.height * opts.scaleY);
+    body.setVelocity(vx, vy);
+  }
+
+  hurtPlayerInRect(rect: Phaser.Geom.Rectangle, damage: number, sourceX: number, cause: string): void {
+    const b = this.player.arcadeBody;
+    if (Phaser.Geom.Intersects.RectangleToRectangle(rect, this.tmpRect.setTo(b.x, b.y, b.width, b.height))) {
+      this.combat.hurt(damage, sourceX, cause);
+    }
+  }
+
+  spawnMinion(x: number, feetY: number): void {
+    const s = DISPLAY.tileSize;
+    const table = monsterTable(this.difficultyLevel).filter(([id]) => monsterById(id).behavior === 'walker');
+    const id = table.length ? table[0]![0] : 'slime';
+    const m = new Monster(this, Math.floor(x / s), Math.floor(feetY / s) - 1, monsterById(id), monsterScale(this.difficultyLevel), this.floorData.boss.room, this.lootRng);
+    this.monsterGroup.add(m);
+    m.setActiveInRoom(true);
+    this.monsters.push(m);
+    this.fx.burst(m.x, m.y - 6, 0xa050e0, 10, 80);
+  }
+
   // ---------- CombatHost ----------
 
   *targets(): Iterable<Hittable> {
     for (const m of this.monsters) if (m.alive && m.room === this.currentRoom) yield m;
+    if (this.boss && this.boss.alive && this.bossState === 'fighting') yield this.boss;
   }
 
   damageTarget(target: Hittable, base: number, fromX: number): void {
@@ -246,6 +380,10 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.fx.hitstop(50);
     const heal = healOnKill(this.stats);
     if (heal > 0) this.combat.heal(heal);
+    if (target instanceof Boss) {
+      this.endBossFight();
+      return;
+    }
     if (target instanceof Monster) {
       this.fx.burst(target.x, target.y - 6, 0xe04848, 12, 100);
       if (this.lootRng.chance(COMBAT.drops.healChance)) this.dropHeal(target.x, target.y - 8);
@@ -434,6 +572,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
       this.floatText(this.player.x, this.player.y - 20, this.combat.godMode ? '무적 ON' : '무적 OFF', '#ffffff');
     }
     if (this.controls.debugPressed(k.nextFloor)) this.goToNextFloor();
+    if (this.controls.debugPressed(k.killBoss) && this.boss && this.bossState === 'fighting') this.damageTarget(this.boss, 99999, this.player.x);
     if (this.controls.debugPressed(k.hitboxes)) {
       const world = this.physics.world;
       world.drawDebug = !world.drawDebug;
@@ -462,7 +601,9 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     }
     for (const p of this.playerShots.getChildren() as Projectile[]) p.tick(dt);
     for (const p of this.enemyShots.getChildren() as Projectile[]) p.tick(dt);
+    if (this.boss && this.bossState === 'fighting') this.boss.tick(dt, this);
     this.updateRoom();
+    this.checkBoss();
     this.handlePortals(input);
     this.handleDebug();
     if (this.debugText) {
