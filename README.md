@@ -10,7 +10,15 @@ npm run dev        # 개발 서버 (http://localhost:5173)
 npm test           # Vitest 단위 테스트
 npm run typecheck  # 타입 검사 (src / tests)
 npm run build      # 타입 검사 후 프로덕션 빌드 (dist/)
+npm run build:preview  # 디버그 기능을 켠 미리보기 빌드 (GitHub Pages 배포용)
 ```
+
+## 미리보기 배포 (GitHub Pages)
+
+`main` 또는 `claude/**` 브랜치에 푸시하면 `.github/workflows/deploy-pages.yml`이 테스트 → 미리보기 빌드 → `gh-pages` 브랜치 반영을 한다.
+최초 1회 저장소 **Settings → Pages → Source**를 "Deploy from a branch", `gh-pages` / `(root)`로 설정해야 한다.
+
+주소: https://hzydkz.github.io/Dungeon-Platformer-Game/ (`?seed=12345`로 시드 지정 가능)
 
 개발 빌드에서는 `?seed=12345` (또는 `?seed=0x3039`)로 런 시드를 지정할 수 있고, 화면 좌상단에 시드가 표시된다.
 
