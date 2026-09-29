@@ -6,7 +6,8 @@ import { computeIntegerZoom } from './core/display';
 import { BootScene } from './scenes/BootScene';
 import { PreloadScene } from './scenes/PreloadScene';
 import { FloorScene } from './scenes/FloorScene';
-import { GameOverScene } from './scenes/GameOverScene';
+import { GameOverScene, VictoryScene } from './scenes/GameOverScene';
+import { SceneKey } from './scenes/keys';
 import { TitleScene } from './scenes/TitleScene';
 import { HudScene } from './scenes/HudScene';
 import { loadFonts } from './ui/text';
@@ -40,7 +41,7 @@ const game = new Phaser.Game({
       tileBias: 16,
     },
   },
-  scene: [BootScene, PreloadScene, TitleScene, FloorScene, HudScene, GameOverScene],
+  scene: [BootScene, PreloadScene, TitleScene, FloorScene, new FloorScene(SceneKey.RedDungeon), HudScene, GameOverScene, VictoryScene],
 });
 
 // 창 크기가 바뀌면 정수배 확대 배율을 다시 계산한다.

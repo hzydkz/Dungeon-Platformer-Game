@@ -7,7 +7,7 @@ import { DEBUG } from '../config/debug';
 import { DISPLAY } from '../config/display';
 import { ROOM } from '../config/generation';
 import { INPUT } from '../config/input';
-import { SPIKE_HITBOX } from '../config/movement';
+import { MOVEMENT, SPIKE_HITBOX } from '../config/movement';
 import { PROGRESSION } from '../config/progression';
 import { themeForFloor, type ThemeDef } from '../config/themes';
 import { characterStats } from '../core/character';
@@ -15,6 +15,7 @@ import { applyHeal, healOnKill, lifesteal, monsterScale, outgoingDamage } from '
 import { lineOfSight } from '../core/combat/los';
 import type { Stats } from '../core/combat/stats';
 import { generateFloor, type FloorKind, type GeneratedFloor, type TilePos } from '../core/generation/floor';
+import { escapeTimeForLayout } from '../core/escape';
 import { Exploration } from '../core/map/exploration';
 import { Rng, deriveSeed } from '../core/rng';
 import type { RunState } from '../core/run';
@@ -49,6 +50,8 @@ export interface HudSource {
   readonly label: string;
   readonly combat: PlayerCombat;
   readonly bossBar: { readonly name: string; readonly hp: number; readonly maxHp: number } | null;
+  /** 빨간 던전 탈출 남은 시간 (초). 타이머가 없으면 null */
+  readonly escapeTimeLeft: number | null;
 }
 
 export type BossFightState = 'waiting' | 'fighting' | 'defeated';
@@ -85,6 +88,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
   protected boss: Boss | null = null;
   protected bossState: BossFightState = 'waiting';
   private bossWarned = false;
+  escapeTimeLeft: number | null = null;
   readonly arena = new Phaser.Geom.Rectangle();
   floorY = 0;
   private debugText?: Phaser.GameObjects.Text;
@@ -117,15 +121,20 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.boss = null;
     this.bossState = 'waiting';
     this.bossWarned = false;
+    this.escapeTimeLeft = null;
   }
 
   create(): void {
     this.run = this.registry.get(RegistryKey.run) as RunState;
-    this.theme = themeForFloor(this.floorNumber);
+    this.theme = themeForFloor(this.kind === 'red' ? Math.min(9, this.floorNumber + PROGRESSION.redDifficultyBonus) : this.floorNumber);
+    this.stats = characterStats(this.run.character, this.run.upgrades, CATALOG);
     this.floorData = generateFloor({
       runSeed: this.run.runSeed,
       floor: this.floorNumber,
       kind: this.kind,
+      redPortalChanceBonus: this.stats.redPortalChance,
+      trapChanceBonus: this.stats.trapChance,
+      chestChanceMultiplier: this.stats.chestChance,
     });
     this.exploration = new Exploration(this.floorData.layout);
     this.lootRng = new Rng(deriveSeed(this.floorData.seed, 'loot'));
@@ -143,7 +152,6 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.player = new Player(this, start.x * s + s / 2, (start.y + 1) * s - 12, AssetKey.player(role.id), (x, y) => getTile(this.grid, x, y));
     this.player.setDepth(10);
     this.player.lastSafe.set(this.player.x, this.player.y);
-    this.stats = characterStats(this.run.character, this.run.upgrades, CATALOG);
     this.combat = new PlayerCombat(this, this.player, role, this.stats, this.run.hp, this);
     this.physics.add.collider(this.player, layer, undefined, (_p, tile) => this.player.shouldCollideOneWay(tile as Phaser.Tilemaps.Tile));
     this.physics.world.setBounds(0, 0, this.grid.width * s, this.grid.height * s);
@@ -164,11 +172,32 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     if (DEBUG.enabled) {
       this.debugText = this.add.text(2, DISPLAY.height - 10, '', textStyle('tiny', '#9090b0')).setScrollFactor(0).setDepth(1000);
     }
+
+    // HUD가 뜬 다음 프레임에 층 알림
+    this.time.delayedCall(80, () => this.announceFloor());
+    const onWake = () => this.onReturnFromRed();
+    this.events.on(Phaser.Scenes.Events.WAKE, onWake);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.events.off(Phaser.Scenes.Events.WAKE, onWake));
+  }
+
+  protected announceFloor(): void {
+    const hud = this.hud();
+    if (!hud) return;
+    if (this.kind === 'red') {
+      hud.notify('빨간 던전: 보스를 처치하면 보상. 처치 후 제한 시간 안에 입구 포탈로 돌아오세요', 4, '#ff8080');
+    } else if (this.floorData.redPortal) {
+      // 기획서 7.2: 화면 상단 중앙, 3초
+      hud.notify('빨간 포탈이 생성되었습니다', PROGRESSION.redPortalNoticeSeconds, '#ff5050');
+    } else if (this.floorNumber >= PROGRESSION.floors) {
+      hud.notify(`${this.floorNumber}층: 최종 보스를 처치하세요`, 3, '#d8a0ff');
+    } else {
+      hud.notify(this.label, 2, '#e8e0ff');
+    }
   }
 
   protected setupPortals(): void {
     const start = this.floorData.entrance;
-    this.portals.push(new Portal(this, start.x, start.y, 'entrance', AssetKey.portalBlue));
+    this.portals.push(new Portal(this, start.x, start.y, 'entrance', this.kind === 'red' ? AssetKey.portalRed : AssetKey.portalBlue));
     if (this.floorData.exitPortal) {
       this.portals.push(new Portal(this, this.floorData.exitPortal.x, this.floorData.exitPortal.y, 'exit', AssetKey.portalBlue));
     }
@@ -315,8 +344,37 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.onBossDefeated();
   }
 
-  /** 보스 처치 보상 등 (M5 최종 보스 클리어, M7 강화 선택) */
-  protected onBossDefeated(): void {}
+  /** 보스 처치 후: 9층 최종 보스는 클리어, 빨간 던전은 탈출 타이머 시작 (보상은 M7) */
+  protected onBossDefeated(): void {
+    if (this.kind === 'floor' && this.floorNumber >= PROGRESSION.floors) {
+      this.ending = true;
+      this.run.outcome = 'victory';
+      this.run.hp = this.combat.hp;
+      this.time.delayedCall(2200, () => {
+        this.scene.stop(SceneKey.Hud);
+        this.scene.start(SceneKey.Victory);
+      });
+      return;
+    }
+    if (this.kind === 'red') this.startEscapeTimer();
+  }
+
+  protected startEscapeTimer(): void {
+    const s = DISPLAY.tileSize;
+    const centers = this.floorData.rooms.map((r) => ({ x: (r.x + r.w / 2) * s, y: (r.y + r.h / 2) * s }));
+    this.escapeTimeLeft = escapeTimeForLayout(this.floorData.layout, centers, MOVEMENT.runSpeed * this.stats.moveSpeed, this.stats.escapeTime);
+    this.time.delayedCall(3000, () => this.hud()?.notify('던전이 무너집니다! 입구 포탈로 돌아가세요', 3, '#ff5050'));
+  }
+
+  protected updateEscapeTimer(dt: number): void {
+    if (this.escapeTimeLeft === null) return;
+    const before = this.escapeTimeLeft;
+    this.escapeTimeLeft = Math.max(0, this.escapeTimeLeft - dt);
+    if (this.escapeTimeLeft <= PROGRESSION.escapeWarningSeconds && Math.floor(before) !== Math.floor(this.escapeTimeLeft)) {
+      this.fx.shake(0.003, 150);
+    }
+    if (this.escapeTimeLeft <= 0) this.onPlayerDeath('빨간 던전 탈출 실패');
+  }
 
   fireBossShot(x: number, y: number, vx: number, vy: number, damage: number, opts: { homing?: boolean; scaleY?: number; lifetime?: number } = {}): void {
     const p = new Projectile(this, {
@@ -439,7 +497,8 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.physics.pause();
     this.time.delayedCall(700, () => {
       this.scene.stop(SceneKey.Hud);
-      this.scene.stop(SceneKey.RedDungeon);
+      if (this.kind === 'red') this.scene.stop(SceneKey.Floor);
+      else this.scene.stop(SceneKey.RedDungeon);
       this.scene.start(SceneKey.GameOver);
     });
   }
@@ -505,15 +564,73 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     for (const p of this.portals) {
       if (!p.active || !p.contains(this.player.x, this.player.y)) continue;
       if (p.kind === 'exit') this.goToNextFloor();
+      else if (p.kind === 'red') this.enterRedDungeon();
+      else if (p.kind === 'entrance' && this.kind === 'red') this.exitRedDungeon();
     }
   }
 
+  /** 출구 파란 포탈: 다음 층으로. 층 이동 시 최대 체력의 30% 회복 (기획서 8.8) */
   protected goToNextFloor(): void {
     if (this.ending) return;
+    if (this.kind === 'red') {
+      this.exitRedDungeon();
+      return;
+    }
+    if (this.floorNumber >= PROGRESSION.floors) return;
     this.ending = true;
+    this.fx.sound('sfx_portal', 0.6);
     this.run.floor = this.floorNumber + 1;
+    const healRatio = PROGRESSION.floorHealRatio + this.stats.floorHealBonus;
+    this.run.hp = applyHeal(this.stats, this.combat.hp, this.stats.maxHp * healRatio);
+    this.cameras.main.fadeOut(250, 0, 0, 0);
+    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+      this.scene.restart({ floor: this.floorNumber + 1, kind: 'floor' } satisfies FloorSceneData);
+    });
+  }
+
+  /** 빨간 포탈: 이 층은 재워 두고 빨간 던전을 띄운다 */
+  protected enterRedDungeon(): void {
     this.run.hp = this.combat.hp;
-    this.scene.restart({ floor: this.floorNumber + 1, kind: 'floor' } satisfies FloorSceneData);
+    this.fx.sound('sfx_portal', 0.6);
+    this.scene.launch(SceneKey.RedDungeon, { floor: this.floorNumber, kind: 'red' } satisfies FloorSceneData);
+    this.scene.sleep();
+  }
+
+  /** 빨간 던전 입구 포탈: 원래 층으로 돌아간다 (보스를 안 잡아도 허용, 빨간 포탈은 사라진다) */
+  protected exitRedDungeon(): void {
+    if (this.ending) return;
+    this.ending = true;
+    this.run.hp = this.combat.hp;
+    this.fx.sound('sfx_portal', 0.6);
+    this.scene.wake(SceneKey.Floor);
+    this.scene.stop();
+  }
+
+  /** 빨간 던전에서 돌아옴: 빨간 포탈 자리에 서고, 포탈은 사라진다 */
+  protected onReturnFromRed(): void {
+    const s = DISPLAY.tileSize;
+    const red = this.portals.find((p) => p.kind === 'red');
+    if (red && this.floorData.redPortal) {
+      this.player.arcadeBody.reset(this.floorData.redPortal.x * s + s / 2, (this.floorData.redPortal.y + 1) * s - 12);
+      this.fx.burst(red.x, red.y - 16, 0xff3030, 16, 90);
+      red.destroy();
+      this.portals = this.portals.filter((p) => p !== red);
+    }
+    this.registry.set(RegistryKey.hudSource, this);
+    this.refreshStats();
+    this.combat.hp = Math.min(this.run.hp, this.stats.maxHp);
+    this.controls = new Controls(this);
+    this.scene.bringToTop(SceneKey.Hud);
+    this.hud()?.notify('빨간 포탈이 닫혔습니다', 2, '#ff8080');
+  }
+
+  /** 강화 등으로 스탯이 바뀌면 다시 계산 */
+  refreshStats(): void {
+    const prevMax = this.stats.maxHp;
+    this.stats = characterStats(this.run.character, this.run.upgrades, CATALOG);
+    this.combat.stats = this.stats;
+    if (this.stats.maxHp > prevMax) this.combat.heal(this.stats.maxHp - prevMax);
+    this.combat.hp = Math.min(this.combat.hp, this.stats.maxHp);
   }
 
   /** 가시: 게임과 도달성 검증기가 같은 판정 영역을 쓴다 */
@@ -602,6 +719,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     for (const p of this.playerShots.getChildren() as Projectile[]) p.tick(dt);
     for (const p of this.enemyShots.getChildren() as Projectile[]) p.tick(dt);
     if (this.boss && this.bossState === 'fighting') this.boss.tick(dt, this);
+    this.updateEscapeTimer(dt);
     this.updateRoom();
     this.checkBoss();
     this.handlePortals(input);

@@ -46,3 +46,14 @@ export class GameOverScene extends Phaser.Scene {
     if (this.time.now > this.readyAt && input.confirmPressed) this.scene.start(SceneKey.Title);
   }
 }
+
+/** 클리어 화면 (9층 최종 보스 처치) */
+export class VictoryScene extends GameOverScene {
+  constructor() {
+    super(SceneKey.Victory);
+  }
+
+  protected override title(): { text: string; color: string } {
+    return { text: '클리어!', color: '#ffe080' };
+  }
+}

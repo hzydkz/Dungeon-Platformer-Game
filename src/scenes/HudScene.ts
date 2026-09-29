@@ -3,6 +3,7 @@ import { DEBUG } from '../config/debug';
 import { DISPLAY } from '../config/display';
 import { MAP } from '../config/map';
 import { ROOM } from '../config/generation';
+import { PROGRESSION } from '../config/progression';
 import { Controls } from '../input/Controls';
 import { textStyle } from '../ui/text';
 import type { HudSource } from './FloorScene';
@@ -23,6 +24,7 @@ export class HudScene extends Phaser.Scene {
   private notice!: Phaser.GameObjects.Text;
   private noticeUntil = 0;
   private bossName!: Phaser.GameObjects.Text;
+  private timer!: Phaser.GameObjects.Text;
   private hpText!: Phaser.GameObjects.Text;
   private skillText!: Phaser.GameObjects.Text;
 
@@ -49,6 +51,12 @@ export class HudScene extends Phaser.Scene {
       .setOrigin(0.5, 0)
       .setDepth(30)
       .setVisible(false);
+    this.timer = this.add
+      .text(DISPLAY.width / 2, 6, '', textStyle('large', '#ffffff', { stroke: '#000000', strokeThickness: 3 }))
+      .setOrigin(0.5, 0)
+      .setScale(2)
+      .setDepth(25)
+      .setVisible(false);
     this.bossName = this.add.text(DISPLAY.width / 2, DISPLAY.height - 26, '', textStyle('small', '#e0c8ff')).setOrigin(0.5, 0).setDepth(10);
   }
 
@@ -56,6 +64,17 @@ export class HudScene extends Phaser.Scene {
   notify(text: string, seconds: number, color = '#ffffff'): void {
     this.notice.setText(text).setColor(color).setVisible(true).setAlpha(1);
     this.noticeUntil = this.time.now + seconds * 1000;
+  }
+
+  /** 빨간 던전 탈출 타이머: 화면 중앙 상단에 크게, 남은 10초부터 경고 */
+  private drawTimer(src: HudSource): void {
+    const t = src.escapeTimeLeft;
+    this.timer.setVisible(t !== null);
+    if (t === null) return;
+    const warn = t <= PROGRESSION.escapeWarningSeconds;
+    this.timer.setText(t.toFixed(1));
+    this.timer.setColor(warn ? '#ff4040' : '#ffffff');
+    this.timer.setScale(warn ? 2 + 0.25 * Math.abs(Math.sin(this.time.now / 120)) : 2);
   }
 
   private drawBossBar(src: HudSource): void {
@@ -195,6 +214,7 @@ export class HudScene extends Phaser.Scene {
     if (!src) return;
     this.drawBars(src);
     this.drawBossBar(src);
+    this.drawTimer(src);
     if (input.mapPressed) this.showFull = !this.showFull;
 
     const m = MAP.minimap;
