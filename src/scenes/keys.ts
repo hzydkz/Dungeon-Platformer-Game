@@ -2,14 +2,19 @@
 export const SceneKey = {
   Boot: 'Boot',
   Preload: 'Preload',
-  TestRoom: 'TestRoom',
+  Title: 'Title',
+  CharacterSelect: 'CharacterSelect',
   Floor: 'Floor',
   RedDungeon: 'RedDungeon',
   Hud: 'Hud',
+  Reward: 'Reward',
+  GameOver: 'GameOver',
+  Victory: 'Victory',
 } as const;
 
 export const RegistryKey = {
-  runSeed: 'runSeed',
+  /** URL로 지정한 시드 (없으면 null) */
+  seedOverride: 'seedOverride',
   run: 'run',
   /** HUD가 읽는 현재 층 씬 */
   hudSource: 'hudSource',

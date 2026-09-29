@@ -95,16 +95,21 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (!locked && input.moveX !== 0) this.facing = input.moveX > 0 ? 1 : -1;
     this.setFlipX(this.facing < 0);
 
-    if (this.onGround) this.lastSafe.set(this.x, this.y);
     this.updateAnimation();
   }
 
+  /** 공격/피격 애니메이션이 끝날 때까지 이동 애니메이션으로 덮지 않는다 */
+  private actionLockUntil = 0;
+
   playAction(action: string, ignoreIfPlaying = true): void {
     const key = `${this.textureKey}_${action}`;
-    if (this.scene.anims.exists(key)) this.anims.play(key, ignoreIfPlaying);
+    if (!this.scene.anims.exists(key)) return;
+    this.anims.play(key, ignoreIfPlaying);
+    if (!ignoreIfPlaying) this.actionLockUntil = this.scene.time.now + 160;
   }
 
   private updateAnimation(): void {
+    if (this.scene.time.now < this.actionLockUntil) return;
     const body = this.arcadeBody;
     if (!this.onGround) this.playAction(body.velocity.y < 0 ? 'jump' : 'fall');
     else if (Math.abs(body.velocity.x) > 1) this.playAction('run');

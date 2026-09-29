@@ -1,12 +1,11 @@
 import Phaser from 'phaser';
 import { DEBUG } from '../config/debug';
-import { createRun } from '../core/run';
-import { generateRunSeed, parseSeedFromQuery } from '../core/seed';
+import { parseSeedFromQuery } from '../core/seed';
 import { RegistryKey, SceneKey } from './keys';
 
 /**
- * 부트 씬: 런 시드를 결정해 레지스트리에 저장하고 다음 씬으로 넘어간다.
- * 개발 빌드에서는 `?seed=` 파라미터로 시드를 지정할 수 있다.
+ * 부트 씬: URL 파라미터(개발/미리보기 빌드)를 읽고 에셋 로딩으로 넘어간다.
+ * `?seed=12345`로 런 시드를 고정할 수 있다.
  */
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -14,12 +13,8 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
-    const fromQuery = DEBUG.enabled
-      ? parseSeedFromQuery(window.location.search, DEBUG.seedQueryParam)
-      : null;
-    const runSeed = fromQuery ?? generateRunSeed();
-    this.registry.set(RegistryKey.runSeed, runSeed);
-    this.registry.set(RegistryKey.run, createRun(runSeed, performance.now()));
+    const seed = DEBUG.enabled ? parseSeedFromQuery(window.location.search, DEBUG.seedQueryParam) : null;
+    this.registry.set(RegistryKey.seedOverride, seed);
     this.scene.start(SceneKey.Preload);
   }
 }

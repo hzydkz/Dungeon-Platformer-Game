@@ -19,6 +19,9 @@ export class HudScene extends Phaser.Scene {
   private fullTitle!: Phaser.GameObjects.Text;
   private floorLabel!: Phaser.GameObjects.Text;
   private showFull = false;
+  private bars!: Phaser.GameObjects.Graphics;
+  private hpText!: Phaser.GameObjects.Text;
+  private skillText!: Phaser.GameObjects.Text;
 
   constructor() {
     super(SceneKey.Hud);
@@ -37,6 +40,49 @@ export class HudScene extends Phaser.Scene {
       .text(DISPLAY.width - MAP.minimap.margin, MAP.minimap.margin + MAP.minimap.maxHeight + 3, '', textStyle('tiny', '#c8c0e8', { align: 'right' }))
       .setOrigin(1, 0)
       .setDepth(10);
+    this.createBars();
+  }
+
+  private createBars(): void {
+    this.bars = this.add.graphics().setDepth(10);
+    this.hpText = this.add.text(6, 13, '', textStyle('tiny', '#ffffff')).setDepth(11);
+    this.skillText = this.add.text(6, 30, '', textStyle('tiny', '#c8c0e8')).setDepth(11);
+  }
+
+  /** 체력 바, 마나/쿨타임/차지 바 */
+  private drawBars(src: HudSource): void {
+    const c = src.combat;
+    const g = this.bars;
+    g.clear();
+    const w = 90;
+    const ratio = Math.max(0, c.hp / c.stats.maxHp);
+    g.fillStyle(0x000000, 0.6).fillRect(4, 4, w + 4, 8);
+    g.fillStyle(0x3a1020, 1).fillRect(6, 6, w, 4);
+    g.fillStyle(ratio > 0.25 ? 0xe04858 : 0xff2030, 1).fillRect(6, 6, Math.round(w * ratio), 4);
+    this.hpText.setText(`${Math.ceil(c.hp)} / ${c.stats.maxHp}`);
+    const sk = c.role.skill;
+    let bar = 0;
+    let color = 0x7fa8ff;
+    let label = '';
+    if (sk.kind === 'explosion') {
+      bar = c.mana / c.role.maxMana;
+      label = `마나 ${Math.floor(c.mana)}`;
+    } else if (sk.kind === 'chargeShot') {
+      bar = c.charge > 0 ? c.charge : c.skillCooldown <= 0 ? 1 : 0;
+      color = c.charge > 0 ? 0xffd060 : 0x80d080;
+      label = c.charge > 0 ? '차지' : c.skillCooldown <= 0 ? '차지샷 준비' : '';
+    } else if (sk.kind === 'dash') {
+      bar = c.skillCooldown <= 0 ? 1 : 1 - c.skillCooldown / (sk.cooldown * c.stats.skillCooldown);
+      color = bar >= 1 ? 0x80d080 : 0x507050;
+      label = bar >= 1 ? '대시 준비' : '대시';
+    } else {
+      bar = c.blocking ? 1 : 0;
+      color = 0xd0d0e0;
+      label = c.blocking ? '막는 중' : '방패 (C/K)';
+    }
+    g.fillStyle(0x000000, 0.6).fillRect(4, 24, 50, 6);
+    g.fillStyle(color, 1).fillRect(5, 25, Math.round(48 * Math.max(0, Math.min(1, bar))), 4);
+    this.skillText.setText(label);
   }
 
   private source(): HudSource | null {
@@ -113,6 +159,7 @@ export class HudScene extends Phaser.Scene {
     this.mini.clear();
     this.full.clear();
     if (!src) return;
+    this.drawBars(src);
     if (input.mapPressed) this.showFull = !this.showFull;
 
     const m = MAP.minimap;
