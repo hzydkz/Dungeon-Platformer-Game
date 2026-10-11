@@ -4,7 +4,7 @@ import { PlayerCombat, type CombatHost } from '../combat/PlayerCombat';
 import type { Hittable } from '../combat/types';
 import { COMBAT } from '../config/combat';
 import { DEBUG } from '../config/debug';
-import { DISPLAY } from '../config/display';
+import { CAMERA, DISPLAY } from '../config/display';
 import { ROOM } from '../config/generation';
 import { INPUT } from '../config/input';
 import { MOVEMENT, SPIKE_HITBOX } from '../config/movement';
@@ -182,7 +182,11 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.setupBoss();
     this.setupExploration();
 
-    this.cameras.main.startFollow(this.player, true, 0.2, 0.2);
+    // 보스전 외에는 방 경계가 아니라 층 전체를 부드럽게 따라간다
+    const cam = this.cameras.main;
+    cam.setBounds(0, 0, this.grid.width * s, this.grid.height * s);
+    cam.startFollow(this.player, true, CAMERA.followLerp, CAMERA.followLerp);
+    cam.setDeadzone(CAMERA.deadzoneWidth, CAMERA.deadzoneHeight);
     this.cameras.main.fadeIn(250, 0, 0, 0);
     this.fx.music(this.theme.music);
     this.updateRoom();
@@ -362,7 +366,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
         if (getTile(this.grid, tx, ty) === Tile.Breakable) this.breakWall(tx, ty);
       }
     }
-    for (const c of this.chests) if (c.alive && c.room === this.currentRoom && Phaser.Geom.Intersects.RectangleToRectangle(rect, c.hitRect(this.tmpRect))) this.openChest(c);
+    for (const c of this.chests) if (c.alive && Phaser.Geom.Intersects.RectangleToRectangle(rect, c.hitRect(this.tmpRect))) this.openChest(c);
   }
 
   /** 비밀 벽 한 칸을 치면 이어진 비밀 벽이 모두 부서진다 (원거리 역할군도 통로를 열 수 있게) */
@@ -494,6 +498,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.bossState = 'fighting';
     this.fx.music('bgm_boss');
     this.setDoorTiles(Tile.Seal);
+    this.lockCameraToArena();
     this.boss.startFight();
     this.fx.shake(0.006, 400);
     this.fx.sound('sfx_boss_roar', 0.8);
@@ -506,6 +511,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.bossState = 'defeated';
     this.fx.music(this.theme.music);
     this.setDoorTiles(Tile.Empty);
+    this.unlockCamera();
     this.run.bossesKilled++;
     for (const shot of [...(this.enemyShots.getChildren() as Projectile[])]) shot.destroy();
     this.fx.shake(0.012, 600);
@@ -594,9 +600,9 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
   // ---------- CombatHost ----------
 
   *targets(): Iterable<Hittable> {
-    for (const m of this.monsters) if (m.alive && m.room === this.currentRoom) yield m;
+    for (const m of this.monsters) if (m.alive && m.awake) yield m;
     if (this.boss && this.boss.alive && this.bossState === 'fighting') yield this.boss;
-    for (const c of this.chests) if (c.alive && c.room === this.currentRoom) yield c;
+    for (const c of this.chests) if (c.alive && this.nearView(c.x, c.y)) yield c;
   }
 
   damageTarget(target: Hittable, base: number, fromX: number): void {
@@ -683,7 +689,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
   }
 
   private shotHits(shot: Projectile, m: Monster): void {
-    if (!shot.active || !m.alive || m.room !== this.currentRoom) return;
+    if (!shot.active || !m.alive || !m.awake) return;
     if (shot.hitSet.has(m)) return;
     shot.hitSet.add(m);
     this.damageTarget(m, shot.damage, shot.x);
@@ -724,14 +730,8 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     if (gx < 0 || gy < 0 || gx >= L.gridW || gy >= L.gridH) return;
     const room = L.cellRoom[gy * L.gridW + gx] as number;
     if (room < 0 || room === this.currentRoom) return;
-    const prev = this.currentRoom;
     this.currentRoom = room;
-    for (const m of this.monsters) {
-      if (m.room === prev || m.room === room) m.setActiveInRoom(m.room === room);
-    }
     this.onEnterRoom(room);
-    const pr = this.floorData.rooms[room]!;
-    this.cameras.main.setBounds(pr.x * s, pr.y * s, pr.w * s, pr.h * s);
   }
 
   protected onEnterRoom(room: number): void {
@@ -744,7 +744,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
 
   protected handlePortals(input: InputFrame): void {
     if (!input.upPressed) return;
-    for (const c of this.chests) if (c.alive && c.room === this.currentRoom && c.contains(this.player.x, this.player.y)) this.openChest(c);
+    for (const c of this.chests) if (c.alive && c.contains(this.player.x, this.player.y)) this.openChest(c);
     if (this.altar && Math.abs(this.altar.x - this.player.x) < 12 && Math.abs(this.altar.y - 12 - this.player.y) < 20) this.useAltar();
     for (const p of this.portals) {
       if (!p.active || !p.contains(this.player.x, this.player.y)) continue;
@@ -846,12 +846,45 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     }
   }
 
-  /** 몬스터가 다른 방으로 넘어가면 방 정보를 갱신하고, 현재 방이 아니면 멈춘다 */
+  /** 몬스터가 다른 방으로 넘어가면 방 정보를 갱신한다 */
   protected trackMonsterRoom(m: Monster): void {
     const room = this.roomAt(m.x, m.y - 2);
-    if (room < 0 || room === m.room) return;
-    m.room = room;
-    if (room !== this.currentRoom) m.setActiveInRoom(false);
+    if (room >= 0) m.room = room;
+  }
+
+  /** 카메라 화면(+여유) 안의 사각형인지 */
+  protected nearView(x: number, y: number): boolean {
+    const v = this.cameras.main.worldView;
+    const m = CAMERA.wakeMargin;
+    return x > v.left - m && x < v.right + m && y > v.top - m && y < v.bottom + m;
+  }
+
+  /** 화면 근처의 몬스터만 깨워서 움직인다 (옆 방이 보여도 멈춰 있지 않게) */
+  protected updateAwake(): void {
+    for (const m of this.monsters) {
+      if (!m.alive) continue;
+      const near = this.nearView(m.x, m.y);
+      if (near !== m.awake) m.setActiveInRoom(near);
+    }
+  }
+
+  /** 보스전: 카메라를 아레나로 부드럽게 옮긴 뒤 아레나 안에 고정 */
+  protected lockCameraToArena(): void {
+    const cam = this.cameras.main;
+    const a = this.arena;
+    const cx = Phaser.Math.Clamp(this.player.x, a.left + cam.width / 2, a.right - cam.width / 2);
+    const cy = Phaser.Math.Clamp(this.player.y, a.top + cam.height / 2, a.bottom - cam.height / 2);
+    cam.stopFollow();
+    cam.pan(cx, cy, CAMERA.bossPanMs, 'Sine.easeInOut', true, (_c: Phaser.Cameras.Scene2D.Camera, progress: number) => {
+      if (progress < 1) return;
+      cam.setBounds(a.x, a.y, a.width, a.height);
+      cam.startFollow(this.player, true, CAMERA.followLerp, CAMERA.followLerp);
+    });
+  }
+
+  protected unlockCamera(): void {
+    const s = DISPLAY.tileSize;
+    this.cameras.main.setBounds(0, 0, this.grid.width * s, this.grid.height * s);
   }
 
   /** 월드 좌표(px)의 방 인덱스 (-1: 방 밖) */
@@ -896,8 +929,9 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.player.tick(dt, input);
     if (this.combat.dashing) this.player.arcadeBody.setVelocityY(0);
     this.handleSpikes();
+    this.updateAwake();
     for (const m of this.monsters) {
-      if (m.room !== this.currentRoom || !m.alive) continue;
+      if (!m.alive || !m.awake) continue;
       m.tick(dt, this);
       this.trackMonsterRoom(m);
     }

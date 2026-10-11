@@ -73,6 +73,12 @@ export class Monster extends Phaser.Physics.Arcade.Sprite implements Hittable {
   }
 
   /** 플레이어가 있는 방의 몬스터만 움직인다 */
+  /** 화면 근처에 있어 움직이는 중인지 */
+  get awake(): boolean {
+    return this.arcadeBody.enable;
+  }
+
+  /** 화면 근처의 몬스터만 움직인다 (멀리 있으면 멈춤) */
   setActiveInRoom(active: boolean): void {
     const body = this.arcadeBody;
     body.enable = active && this.alive;
