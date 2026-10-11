@@ -798,6 +798,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     const s = DISPLAY.tileSize;
     const red = this.portals.find((p) => p.kind === 'red');
     if (red && this.floorData.redPortal) {
+      this.player.releaseHang();
       this.player.arcadeBody.reset(this.floorData.redPortal.x * s + s / 2, (this.floorData.redPortal.y + 1) * s - 12);
       this.fx.burst(red.x, red.y - 16, 0xff3030, 16, 90);
       red.destroy();
@@ -840,6 +841,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     if (this.touchingSpike()) {
       this.combat.hurt(COMBAT.player.spikeDamage, this.player.x, '가시');
       if (this.combat.hp > 0) {
+        this.player.releaseHang();
         this.player.setPosition(this.player.lastSafe.x, this.player.lastSafe.y);
         this.player.arcadeBody.setVelocity(0, 0);
         this.player.controlLockUntil = this.time.now / 1000 + 0.25;

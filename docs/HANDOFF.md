@@ -34,13 +34,14 @@
   2. 보스 이동 개선 (접근/후퇴/뛰어넘기/발판 도약/회피, 상황별 패턴)
   3. 카메라: 방 단위 고정 → 층 전체 부드럽게 따라가기 (보스전만 아레나 고정)
   4. 지도: 상시 미니맵 제거 → Tab/M/View로 펼치는 양피지 약도 (실제 지형 + 보스/포탈/상자/제단/현재 위치)
+  5. 스펠렁키식 모서리 잡기 (`core/movement/ledge.ts`, `config/movement.ts`의 `LEDGE_GRAB`, `Player`의 hang 상태) + 단방향 발판을 벽보다 밝은 정사각형 블록으로 표시 (QUESTIONS 29, 30)
 
 ## 2. 실행, 테스트, 배포
 
 ```bash
 npm ci                  # 컨테이너가 새로 뜨면 node_modules가 없을 수 있다
 npm run dev             # http://localhost:5173 (디버그 기능 켜짐)
-npm test                # Vitest 212개 (시드 1,000개 맵 생성 포함, 약 5초)
+npm test                # Vitest 222개 (시드 1,000개 맵 생성 포함, 약 5초)
 npm run typecheck       # src + tests 두 tsconfig 모두
 npm run build:preview   # 배포와 같은 빌드 (typecheck 포함)
 ```
@@ -57,6 +58,8 @@ npm run build:preview   # 배포와 같은 빌드 (typecheck 포함)
    - 디버그 빌드는 `window.__game`(Phaser.Game)을 노출한다. 예: `window.__game.scene.getScene('Floor').player`.
    - 개발 서버 종료 시 `pkill -f "vite --port 5173"`처럼 쓰면 같은 명령줄의 셸까지 죽는다. 별도 스크립트 파일에서 `pgrep -f "node.*vite.*--port 5173"`로 찾아 끄는 방식을 썼다.
    - play.mjs 단계 순서: 키 조작 → eval → 스크린샷 → wait. (예전에 wait를 eval 앞에 둬서 잘못된 결론을 낸 적이 있다.)
+   - pad.mjs는 `stick`(유지), `btnDown`/`btnUp`으로 동시 입력(스틱을 민 채 A)을, `shot`으로 스크린샷(세 번째 인자가 파일 접두사)을 할 수 있다.
+   - 버튼을 오래 누르는 패드 테스트만 하면 키보드 짧은 탭 문제를 놓친다(가변 점프가 바로 끊김). 점프 관련은 키보드 탭으로도 확인할 것.
 
 ## 4. 구조 (요점)
 
@@ -86,6 +89,7 @@ src/assets/manifest.json  에셋 키 → public/assets/ 파일. 없으면 플레
 - **입력** (`input/Controls.ts`): 새 씬의 게임패드 객체는 첫 프레임 버튼 값이 비어 있다. 패드 버튼은 그 씬에서 한 번 떼어진 걸 본 뒤부터 눌림으로 친다(`padArmed`). 키보드는 짧은 탭을 놓치지 않게 key down 이벤트를 래치한다. 씬 전환 관련 입력을 고칠 때 이 둘을 깨지 않게.
 - **카메라/활성화**: 보스전 외에는 층 전체 따라가기. 몬스터는 방이 아니라 화면 근처(`CAMERA.wakeMargin`)에서 깨어난다. 공격 대상/투사체 판정도 같은 기준.
 - **빨간 던전**: `FloorScene`을 다른 씬 키(`RedDungeon`)로 띄우고 원래 층은 sleep. 돌아올 때 WAKE 이벤트. 씬 이벤트 리스너는 재시작해도 남으므로 SHUTDOWN에서 해제한다.
+- **모서리 잡기**: Arcade 물리 단계 직후(scene.update) 스프라이트 좌표는 아직 몸 좌표와 맞지 않는다. 몸 위치를 옮길 때는 몸 기준으로 계산한다(`Player.tryGrab`). 매달린 동안 중력을 끄므로, 플레이어를 순간이동시키는 코드는 `player.releaseHang()`을 먼저 부를 것.
 - **보스 공격은 모두 예고(0.4초 이상)** — 테스트로 강제. 후딜레이 중에는 회피하지 않는다(반격 기회).
 - 한글 글꼴은 Galmuri(픽셀, OFL)를 번들에 포함. 텍스트는 `ui/text.ts`의 `textStyle()`로.
 

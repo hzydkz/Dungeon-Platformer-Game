@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
-import { MOVEMENT, PLAYER_SIZE } from '../config/movement';
+import { LEDGE_GRAB, MOVEMENT, PLAYER_SIZE } from '../config/movement';
 import { PlayerMotor } from '../core/movement/motor';
+import { findLedgeGrab, isLedgeCorner } from '../core/movement/ledge';
 import { isOneWayTile } from '../core/tiles';
 import { DISPLAY } from '../config/display';
 import type { InputFrame } from '../input/Controls';
@@ -22,6 +23,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private downHeldInAir = false;
   /** 마지막으로 안전하게 서 있던 위치 (가시에 닿으면 여기로 복귀) */
   readonly lastSafe = new Phaser.Math.Vector2();
+  /** 매달린 모서리 (없으면 null) */
+  private hang: { tileX: number; tileY: number; dir: 1 | -1 } | null = null;
+  /** 이 시각(씬 시간, 초)까지 모서리를 다시 잡지 않는다 */
+  private regrabAt = 0;
+  /** 이전 프레임의 몸 윗변 (모서리 통과 판정) */
+  private prevBodyTop: number | null = null;
 
   constructor(
     scene: Phaser.Scene,
@@ -47,6 +54,76 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   get onGround(): boolean {
     return this.arcadeBody.blocked.down;
+  }
+
+  /** 모서리에 매달려 있는가 */
+  get hanging(): boolean {
+    return this.hang !== null;
+  }
+
+  /** 매달리기를 풀고 중력을 되돌린다. 속도는 호출 측이 정한다 */
+  releaseHang(now = this.scene.time.now / 1000): void {
+    if (!this.hang) return;
+    this.hang = null;
+    this.regrabAt = now + LEDGE_GRAB.regrabCooldown;
+    this.arcadeBody.setAllowGravity(true);
+  }
+
+  /** 떨어지는 중에 벽 쪽 모서리를 지나가면 붙잡는다 */
+  private tryGrab(input: InputFrame, now: number): boolean {
+    const body = this.arcadeBody;
+    const prevTop = this.prevBodyTop ?? body.top;
+    if (this.onGround || input.downHeld || now < this.regrabAt || body.velocity.y < 0 || input.moveX === 0) return false;
+    // 순간이동(복귀 등) 직후에는 판정하지 않는다. 느린 기기의 한 프레임 낙하(최대 20px)보다는 크게
+    if (Math.abs(body.top - prevTop) > DISPLAY.tileSize * 2) return false;
+    const dir: 1 | -1 = input.moveX > 0 ? 1 : -1;
+    const g = findLedgeGrab(
+      this.tileAt,
+      { left: body.left, right: body.right, top: body.top, prevTop, height: body.height },
+      dir,
+      DISPLAY.tileSize,
+      LEDGE_GRAB,
+    );
+    if (!g) return false;
+    this.hang = { tileX: g.tileX, tileY: g.tileY, dir };
+    this.facing = dir;
+    body.setAllowGravity(false);
+    // 몸 왼쪽/윗변을 매달린 위치로. 물리 단계 직후라 스프라이트 좌표는 아직 갱신 전이므로 몸 기준으로 계산한다
+    body.reset(g.bodyLeft - body.offset.x + this.displayOriginX, g.bodyTop - body.offset.y + this.displayOriginY);
+    this.motor.reset();
+    return true;
+  }
+
+  /** 매달린 동안의 입력. 매달리기가 계속되면 true */
+  private tickHang(input: InputFrame, now: number, locked: boolean): boolean {
+    const h = this.hang;
+    if (!h) return false;
+    const body = this.arcadeBody;
+    // 맞아서 밀려나거나, 잡은 블록이 부서지면 떨어진다
+    if (locked || !isLedgeCorner(this.tileAt, h.tileX, h.tileY)) {
+      this.releaseHang(now);
+      this.motor.reset();
+      return false;
+    }
+    if (input.downHeld) {
+      // ↓ 또는 ↓+점프: 놓고 떨어진다
+      this.releaseHang(now);
+      this.motor.reset();
+      body.setVelocity(0, 0);
+      return false;
+    }
+    if (input.jumpPressed) {
+      // 매달린 상태의 점프는 가변 점프 없이 항상 최대 높이: 짧게 눌러도 모서리 위로 올라선다
+      this.releaseHang(now);
+      this.motor.reset();
+      const moveX = Math.max(-1, Math.min(1, input.moveX));
+      body.setVelocity(moveX * MOVEMENT.runSpeed * this.motor.speedMultiplier, -MOVEMENT.jumpVelocity);
+      if (input.moveX !== 0) this.facing = input.moveX > 0 ? 1 : -1;
+      return false;
+    }
+    body.setVelocity(0, 0);
+    this.facing = h.dir;
+    return true;
   }
 
   /** 단방향 발판과 충돌할지 (Arcade processCallback용) */
@@ -76,6 +153,22 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const now = this.scene.time.now / 1000;
     const body = this.arcadeBody;
     const locked = now < this.controlLockUntil;
+    if (this.hang) {
+      const stillHanging = this.tickHang(input, now, locked);
+      // 매달린 채로, 또는 점프/↓로 막 놓았으면 이번 프레임 이동은 끝 (속도는 tickHang이 정했다)
+      if (stillHanging || (!locked && (input.jumpPressed || input.downHeld))) {
+        this.prevBodyTop = body.top;
+        this.setFlipX(this.facing < 0);
+        this.updateAnimation();
+        return;
+      }
+    } else if (!locked && this.tryGrab(input, now)) {
+      this.prevBodyTop = body.top;
+      this.setFlipX(this.facing < 0);
+      this.updateAnimation();
+      return;
+    }
+    this.prevBodyTop = body.top;
     this.downHeldInAir = input.downHeld && !this.onGround;
     let jumpPressed = input.jumpPressed && !locked;
 
@@ -111,7 +204,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private updateAnimation(): void {
     if (this.scene.time.now < this.actionLockUntil) return;
     const body = this.arcadeBody;
-    if (!this.onGround) this.playAction(body.velocity.y < 0 ? 'jump' : 'fall');
+    if (this.hang) this.playAction(this.scene.anims.exists(`${this.textureKey}_hang`) ? 'hang' : 'jump');
+    else if (!this.onGround) this.playAction(body.velocity.y < 0 ? 'jump' : 'fall');
     else if (Math.abs(body.velocity.x) > 1) this.playAction('run');
     else this.playAction('idle');
   }

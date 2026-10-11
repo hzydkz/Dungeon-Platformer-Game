@@ -69,10 +69,16 @@ function makeTileset(scene: Phaser.Scene, e: TilesetEntry): void {
     const color = e.tiles[slot];
     switch (slot) {
       case 'oneway':
+        // 아래로 통과되는 블록: 벽과 같은 정사각형, 더 밝은 색. 윗면만 밟힌다는 표시로 윗줄을 밝게
+        ctx.fillStyle = shade(color, 0.75);
+        ctx.fillRect(ox, 0, s, s);
         ctx.fillStyle = color;
-        ctx.fillRect(ox, 0, s, 4);
-        ctx.fillStyle = shade(color, 0.6);
-        ctx.fillRect(ox, 4, s, 1);
+        ctx.fillRect(ox + 1, 1, s - 2, s - 2);
+        ctx.fillStyle = shade(color, 1.35);
+        ctx.fillRect(ox, 0, s, 2);
+        ctx.fillStyle = shade(color, 0.85);
+        ctx.fillRect(ox + 3, 6, s - 6, 1);
+        ctx.fillRect(ox + 3, 11, s - 6, 1);
         break;
       case 'spike':
         ctx.fillStyle = color;

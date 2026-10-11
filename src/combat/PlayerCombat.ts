@@ -83,8 +83,10 @@ export class PlayerCombat {
     if (this.role.maxMana > 0) this.mana = Math.min(this.role.maxMana, this.mana + this.role.manaRegen * dt);
 
     const hurtLocked = this.now < this.player.controlLockUntil && !this.dashing;
-    if (input.attackPressed && this.attackCooldown <= 0 && !this.blocking && !hurtLocked) this.basicAttack(input);
-    this.updateSkill(dt, input);
+    // 모서리에 매달린 동안에는 공격/스킬을 쓰지 않는다 (궁수 차지는 매달린 동안 멈춘다)
+    const hanging = this.player.hanging;
+    if (input.attackPressed && this.attackCooldown <= 0 && !this.blocking && !hurtLocked && !hanging) this.basicAttack(input);
+    if (!hanging) this.updateSkill(dt, input);
     this.updateSwing();
 
     const blockFactor = this.blocking && this.role.skill.kind === 'block' ? this.role.skill.moveFactor : 1;
