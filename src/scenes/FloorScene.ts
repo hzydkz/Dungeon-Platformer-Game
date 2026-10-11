@@ -6,7 +6,6 @@ import { COMBAT } from '../config/combat';
 import { DEBUG } from '../config/debug';
 import { CAMERA, DISPLAY } from '../config/display';
 import { ROOM } from '../config/generation';
-import { INPUT } from '../config/input';
 import { MOVEMENT, SPIKE_HITBOX } from '../config/movement';
 import { PROGRESSION } from '../config/progression';
 import { themeForFloor, type ThemeDef } from '../config/themes';
@@ -1017,15 +1016,15 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
 
   protected handleDebug(): void {
     if (!DEBUG.enabled) return;
-    const k = INPUT.debugKeys;
-    if (this.controls.debugPressed(k.revealMap)) this.exploration.revealAll();
-    if (this.controls.debugPressed(k.invincible)) {
+    const c = this.controls;
+    if (c.debugPressed('revealMap')) this.exploration.revealAll();
+    if (c.debugPressed('invincible')) {
       this.combat.godMode = !this.combat.godMode;
       this.floatText(this.player.x, this.player.y - 20, this.combat.godMode ? '무적 ON' : '무적 OFF', '#ffffff');
     }
-    if (this.controls.debugPressed(k.nextFloor)) this.goToNextFloor();
-    if (this.controls.debugPressed(k.killBoss) && this.boss && this.bossState === 'fighting') this.damageTarget(this.boss, 99999, this.player.x);
-    if (this.controls.debugPressed(k.hitboxes)) {
+    if (c.debugPressed('nextFloor')) this.goToNextFloor();
+    if (c.debugPressed('killBoss') && this.boss && this.bossState === 'fighting') this.damageTarget(this.boss, 99999, this.player.x);
+    if (c.debugPressed('hitboxes')) {
       const world = this.physics.world;
       world.drawDebug = !world.drawDebug;
       if (!world.debugGraphic) world.createDebugGraphic();

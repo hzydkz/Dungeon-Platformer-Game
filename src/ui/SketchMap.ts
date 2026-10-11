@@ -68,7 +68,7 @@ export class SketchMap {
     const legend = scene.add
       .text(p.x + 10, p.y + p.height - 14, '● 현재 위치   ◆ 보스   ▣ 상점   ● 포탈(발견하면)   ■ 상자   ▲ 제단', textStyle('tiny', c.ink))
       .setOrigin(0, 0);
-    const close = scene.add.text(p.x + p.width - 10, p.y + p.height - 14, 'Tab / M / View 떼면 닫힘 · 이동 느려짐', textStyle('tiny', c.unvisited)).setOrigin(1, 0);
+    const close = scene.add.text(p.x + p.width - 10, p.y + p.height - 14, 'Tab · M / View · Y 떼면 닫힘 · 이동 느려짐', textStyle('tiny', c.unvisited)).setOrigin(1, 0);
     this.status = scene.add.text(p.x + p.width - 10, p.y + 7, '', textStyle('small', c.ink)).setOrigin(1, 0);
     // 아이템 칸: 3열 (등급 상자, 이름, 효과)
     const colW = Math.floor((p.width - 20) / ITEMS.slots);

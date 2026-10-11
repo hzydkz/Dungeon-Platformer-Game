@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { DEBUG } from '../config/debug';
 import { INPUT, type ActionName } from '../config/input';
 
 /** 한 프레임의 입력 상태. 키보드와 게임패드를 합친 결과. */
@@ -22,7 +23,22 @@ export interface InputFrame {
   /** 메뉴 이동 펄스 (-1, 0, 1). 스틱은 반복 간격마다 한 번씩 */
   menuX: number;
   menuY: number;
+  /** 마지막으로 쓴 입력이 게임패드인가 (화면 안내 문구를 패드 버튼으로) */
+  padActive: boolean;
 }
+
+export type DebugAction = keyof typeof INPUT.debugKeys;
+
+/** 브라우저 Gamepad 객체에서 읽는 최소 형태 */
+type RawPad = { readonly connected: boolean; readonly mapping: string; readonly buttons: readonly { readonly pressed: boolean; readonly value: number }[]; readonly axes: readonly number[] };
+
+/** 마지막으로 패드를 쓴 뒤 키보드를 누르기 전까지 패드 안내를 보인다 (씬이 바뀌어도 유지) */
+let lastDevicePad = false;
+/**
+ * 이 페이지에서 패드를 본 적이 있는가. Safari/Chrome은 버튼을 한 번 누르기 전에는 패드를 알려 주지 않으므로,
+ * 패드가 처음 보이는 순간 눌려 있는 버튼은 그 자체가 새 입력이다 (이전 씬에서 넘어온 입력일 수 없다).
+ */
+let padFirstSeenFrame = -1;
 
 type ButtonAction = 'jump' | 'attack' | 'skill' | 'map' | 'confirm' | 'cancel';
 
@@ -65,17 +81,35 @@ export class Controls {
     return (this.keys.get(action) ?? []).some((k) => k.isDown);
   }
 
-  private pad(): Phaser.Input.Gamepad.Gamepad | null {
-    const gp = this.scene.input.gamepad;
-    if (!gp || gp.total === 0) return null;
-    return gp.getAll().find((p) => p.connected) ?? null;
+  /**
+   * 연결된 게임패드 (표준 매핑 우선). Phaser의 Gamepad 래퍼 대신 브라우저 값을 직접 읽는다:
+   * 래퍼는 버튼 값이 정확히 1일 때만 눌림으로 보고, 씬이 바뀐 뒤 패드 값이 새로 바뀌기 전까지는 값을 무시해서
+   * 브라우저(특히 iPad Safari)마다 동작이 달라질 수 있다.
+   */
+  private pad(): RawPad | null {
+    const nav = typeof navigator !== 'undefined' ? navigator : null;
+    if (!nav || typeof nav.getGamepads !== 'function') return null;
+    let list: readonly (RawPad | null)[];
+    try {
+      list = nav.getGamepads() as unknown as readonly (RawPad | null)[];
+    } catch {
+      return null;
+    }
+    let fallback: RawPad | null = null;
+    for (const p of list) {
+      if (!p || !p.connected) continue;
+      if (p.mapping === 'standard') return p;
+      fallback ??= p;
+    }
+    return fallback;
   }
 
-  private padButton(pad: Phaser.Input.Gamepad.Gamepad | null, index: number): boolean {
-    return !!pad && !!pad.buttons[index]?.pressed;
+  private padButton(pad: RawPad | null, index: number): boolean {
+    const b = pad?.buttons[index];
+    return !!b && (b.pressed || b.value > 0.5);
   }
 
-  private padAction(pad: Phaser.Input.Gamepad.Gamepad | null, action: ButtonAction): boolean {
+  private padAction(pad: RawPad | null, action: ButtonAction): boolean {
     return INPUT.gamepad[action].some((i) => this.padButton(pad, i));
   }
 
@@ -100,7 +134,12 @@ export class Controls {
   private both(id: string, kbDown: boolean, padDown: boolean): { pressed: boolean; released: boolean } {
     const k = this.edge(`k:${id}`, kbDown);
     let p = { pressed: false, released: false };
-    if (this.padReady) {
+    if (this.padFirstSeen) {
+      // 패드를 처음 연결한 누름: 이 버튼을 바로 눌림으로 친다
+      this.prev.set(`p:${id}`, padDown);
+      this.padArmed.add(id);
+      p = { pressed: padDown, released: false };
+    } else if (this.padReady) {
       if (!padDown) this.padArmed.add(id);
       p = this.edge(`p:${id}`, padDown);
       // 이 씬에서 한 번도 떼어진 적 없는 버튼은 이전 씬에서 누르던 것이다
@@ -111,14 +150,24 @@ export class Controls {
 
   /** 패드가 이 씬에서 한 프레임 이상 보였는지 */
   private padReady = false;
+  /** 이번 프레임에 이 페이지에서 처음으로 패드가 보였는지 */
+  private padFirstSeen = false;
   /** 이 씬에서 떼어진 상태를 한 번 이상 본 패드 입력 (새 패드 객체는 첫 프레임 버튼 값이 비어 있다) */
   private readonly padArmed = new Set<string>();
 
   update(dt: number): InputFrame {
-    const pad = this.pad();
+    const rawPad = this.pad();
     const g = INPUT.gamepad;
-    const ax = pad ? pad.axes[0]?.getValue() ?? 0 : 0;
-    const ay = pad ? pad.axes[1]?.getValue() ?? 0 : 0;
+    // 같은 프레임의 다른 씬(HUD 등)도 이 누름을 같이 보도록 프레임 번호로 기록
+    const frame = this.scene.game.loop.frame;
+    if (rawPad && padFirstSeenFrame < 0) padFirstSeenFrame = frame;
+    this.padFirstSeen = rawPad !== null && padFirstSeenFrame === frame;
+    // 디버그 조합(LB + 버튼): 누르는 동안 패드 버튼은 게임 조작으로 쓰지 않는다
+    this.debugChord = DEBUG.enabled && this.padButton(rawPad, g.debugModifier);
+    this.updateDebugPad(rawPad);
+    const pad = this.debugChord ? null : rawPad;
+    const ax = pad ? pad.axes[0] ?? 0 : 0;
+    const ay = pad ? pad.axes[1] ?? 0 : 0;
     const stickX = Math.abs(ax) >= g.stickDeadzone ? Math.sign(ax) : 0;
     const stickY = Math.abs(ay) >= g.stickDeadzone ? Math.sign(ay) : 0;
 
@@ -181,7 +230,13 @@ export class Controls {
       this.primed = true;
       this.latched.clear();
     }
-    this.padReady = pad !== null;
+    this.padReady = rawPad !== null;
+    const kbAny = left || right || up || down || kJump || kAttack || kSkill || kMap || kConfirm || kCancel;
+    const padAny = pLeft || pRight || pUp || pDown || pJump || pAttack || pSkill || pMap || pConfirm || pCancel;
+    if (kbAny && !padAny) lastDevicePad = false;
+    else if (padAny) lastDevicePad = true;
+    // 키 입력 없이 패드만 연결된 경우도 패드 안내
+    const padActive = rawPad !== null && (lastDevicePad || !kbAny);
 
     return {
       moveX,
@@ -201,21 +256,40 @@ export class Controls {
       cancelPressed: cancelE.pressed,
       menuX,
       menuY,
+      padActive,
     };
   }
 
   private readonly debugKeys = new Map<string, Phaser.Input.Keyboard.Key>();
+  /** LB를 누르고 있는 중 (디버그 빌드) */
+  private debugChord = false;
+  /** 이번 프레임에 LB + 버튼으로 새로 누른 디버그 동작 */
+  private readonly debugPadPressed = new Set<DebugAction>();
 
-  /** 디버그 키가 이번 프레임에 눌렸는지 */
-  debugPressed(keyName: string): boolean {
+  private updateDebugPad(pad: RawPad | null): void {
+    this.debugPadPressed.clear();
+    if (!DEBUG.enabled) return;
+    for (const [action, index] of Object.entries(INPUT.gamepad.debugButtons) as [DebugAction, number][]) {
+      const down = this.debugChord && this.padButton(pad, index);
+      const id = `pdebug_${action}`;
+      const was = this.prev.get(id) ?? true;
+      this.prev.set(id, down);
+      if (down && !was) this.debugPadPressed.add(action);
+    }
+  }
+
+  /** 디버그 동작이 이번 프레임에 눌렸는지 (숫자키 또는 패드 LB + 버튼). update() 다음에 부른다 */
+  debugPressed(action: DebugAction): boolean {
+    const padHit = this.debugPadPressed.has(action);
     const kb = this.scene.input.keyboard;
-    if (!kb) return false;
+    if (!kb) return padHit;
+    const keyName = INPUT.debugKeys[action];
     let key = this.debugKeys.get(keyName);
     if (!key) {
       key = kb.addKey(keyName, false);
       key.on('down', () => this.latched.add(`debug_${keyName}`));
       this.debugKeys.set(keyName, key);
     }
-    return this.edge(`debug_${keyName}`, key.isDown).pressed;
+    return this.edge(`debug_${keyName}`, key.isDown).pressed || padHit;
   }
 }

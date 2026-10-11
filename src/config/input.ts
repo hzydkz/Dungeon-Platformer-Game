@@ -30,12 +30,18 @@ export const INPUT = {
     attack: [2],
     /** B, RB */
     skill: [1, 5],
-    /** View(Back) */
-    map: [8],
+    /** View(Back), Y. iPad Safari에서 View 버튼이 전달되지 않을 경우를 대비해 Y로도 연다 */
+    map: [8, 3],
     /** A, Menu(Start) */
     confirm: [0, 9],
     /** B */
     cancel: [1],
+    /**
+     * 디버그(개발/미리보기 빌드 전용): LB를 누른 채로 누르는 버튼. LB를 누르는 동안 이 버튼들은 게임 조작으로 쓰지 않는다.
+     * 아이패드처럼 키보드가 없을 때 숫자키 1~5 대신 쓴다.
+     */
+    debugModifier: 4,
+    debugButtons: { revealMap: 3, invincible: 2, nextFloor: 9, killBoss: 1, hitboxes: 13 },
     dpadUp: 12,
     dpadDown: 13,
     dpadLeft: 14,

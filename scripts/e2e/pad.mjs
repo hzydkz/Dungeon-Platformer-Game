@@ -8,13 +8,21 @@ let n = 0;
 const b = await chromium.launch({ args: ['--use-gl=swiftshader','--enable-unsafe-swiftshader'] });
 const [vw, vh] = (process.env.VIEWPORT ?? '960x540').split('x').map(Number);
 const p = await b.newPage({ viewport: { width: vw, height: vh } });
-await p.addInitScript(() => {
+// REALISTIC=1: Safari/Chrome처럼 버튼을 한 번 누르기 전에는 패드가 보이지 않고, timestamp는 값이 바뀔 때만 갱신된다
+await p.addInitScript((realistic) => {
   const pad = { id: 'Xbox Wireless Controller (STANDARD GAMEPAD)', index: 0, connected: true, mapping: 'standard', timestamp: 0,
     buttons: Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 })), axes: [0, 0, 0, 0] };
   window.__pad = pad;
-  navigator.getGamepads = () => { pad.timestamp = performance.now(); return [pad, null, null, null]; };
-  window.addEventListener('load', () => setTimeout(() => { const e = new Event('gamepadconnected'); e.gamepad = pad; window.dispatchEvent(e); }, 500));
-});
+  let exposed = !realistic;
+  let last = '';
+  navigator.getGamepads = () => {
+    const sig = JSON.stringify([pad.buttons.map((x) => x.value), pad.axes]);
+    if (sig !== last) { last = sig; pad.timestamp = performance.now(); if (pad.buttons.some((x) => x.pressed)) exposed = true; }
+    else if (!realistic) pad.timestamp = performance.now();
+    return exposed ? [pad, null, null, null] : [null, null, null, null];
+  };
+  if (!realistic) window.addEventListener('load', () => setTimeout(() => { const e = new Event('gamepadconnected'); e.gamepad = pad; window.dispatchEvent(e); }, 500));
+}, process.env.REALISTIC === '1');
 const errs = [];
 p.on('pageerror', e => errs.push(String(e)));
 await p.goto(url); await p.waitForTimeout(2000);

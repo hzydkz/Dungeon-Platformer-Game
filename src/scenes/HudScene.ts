@@ -135,7 +135,7 @@ export class HudScene extends Phaser.Scene {
   }
 
   /** 체력 바, 마나/쿨타임/차지 바 */
-  private drawBars(src: HudSource): void {
+  private drawBars(src: HudSource, pad: boolean): void {
     const c = src.combat;
     const g = this.bars;
     g.clear();
@@ -163,7 +163,7 @@ export class HudScene extends Phaser.Scene {
     } else {
       bar = c.blocking ? 1 : 0;
       color = 0xd0d0e0;
-      label = c.blocking ? '막는 중' : '방패 (C/K)';
+      label = c.blocking ? '막는 중' : pad ? '방패 (B/RB)' : '방패 (C/K)';
     }
     g.fillStyle(0x000000, 0.6).fillRect(4, 24, 50, 6);
     g.fillStyle(color, 1).fillRect(5, 25, Math.round(48 * Math.max(0, Math.min(1, bar))), 4);
@@ -183,12 +183,12 @@ export class HudScene extends Phaser.Scene {
       else if (left < 400) this.notice.setAlpha(left / 400);
     }
     if (!src) return;
-    this.drawBars(src);
+    this.drawBars(src, input.padActive);
     this.drawStatus(src);
     this.drawBossBar(src);
     this.drawTimer(src);
     this.sketch.setShown(input.mapHeld, src);
     this.sketch.update(src);
-    this.floorLabel.setText(`${src.label}\n지도: Tab/M 누르기` + (DEBUG.enabled ? `\nseed ${src.floorData.seed}` : ''));
+    this.floorLabel.setText(`${src.label}\n${input.padActive ? '지도: View/Y 누르기' : '지도: Tab/M 누르기'}` + (DEBUG.enabled ? `\nseed ${src.floorData.seed}` : ''));
   }
 }

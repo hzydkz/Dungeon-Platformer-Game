@@ -32,7 +32,7 @@ export class TitleScene extends Phaser.Scene {
     this.add.text(cx, 116, '1층부터 9층까지 올라가라', textStyle('small', '#b0a8d8')).setOrigin(0.5).setDepth(60);
     this.prompt = this.add.text(cx, 180, 'Enter / Space / A 버튼으로 시작', textStyle('small', '#ffffff')).setOrigin(0.5).setDepth(60);
     this.add
-      .text(cx, 236, '이동 ←→  점프 Space/Z  공격 X/J  스킬 C/K  지도 Tab/M(누르는 동안)  포탈·상자·상점 ↑\n게임패드: 스틱/십자  A 점프  X 공격  B/RB 스킬  View 지도(누르는 동안)', textStyle('tiny', '#9890c0', { align: 'center' }))
+      .text(cx, 236, '이동 ←→  점프 Space/Z  공격 X/J  스킬 C/K  지도 Tab/M(누르는 동안)  포탈·상자·상점 ↑\n게임패드: 스틱/십자  A 점프  X 공격  B/RB 스킬  View/Y 지도(누르는 동안)', textStyle('tiny', '#9890c0', { align: 'center' }))
       .setOrigin(0.5)
       .setDepth(60);
   }
