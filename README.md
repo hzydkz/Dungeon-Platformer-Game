@@ -54,7 +54,8 @@ src/
   input/    키보드 + 게임패드
   assets/   manifest.json (에셋 키) — 파일은 public/assets/
 tests/      Vitest
-docs/       ASSETS.md (에셋 규격), QUESTIONS.md (기획 확인 필요 사항)
+docs/       ASSETS.md (에셋 규격), QUESTIONS.md (기획 확인 필요 사항), HANDOFF.md (새 세션 인수인계)
+scripts/e2e/ 브라우저 자동 조작 (play.mjs 키보드, pad.mjs 가상 Xbox 패드)
 ```
 
 ## 방 템플릿과 도달 가능성
