@@ -19,6 +19,7 @@ import { escapeTimeForLayout } from '../core/escape';
 import { rewardChoices, rollChest, type RewardSource } from '../core/loot';
 import { secretHintVisible } from '../core/secret';
 import { Exploration } from '../core/map/exploration';
+import type { MarkerInput } from '../core/map/markers';
 import { Rng, deriveSeed } from '../core/rng';
 import type { RunState } from '../core/run';
 import { Tile, getTile, isHazardTile, isOneWayTile, isSolidTile, setTile } from '../core/tiles';
@@ -59,6 +60,8 @@ export interface HudSource {
   readonly bossBar: { readonly name: string; readonly hp: number; readonly maxHp: number } | null;
   /** 빨간 던전 탈출 남은 시간 (초). 타이머가 없으면 null */
   readonly escapeTimeLeft: number | null;
+  /** 약도에 그릴 상태 */
+  mapInput(): MarkerInput;
 }
 
 export type BossFightState = 'waiting' | 'fighting' | 'defeated';
@@ -852,6 +855,27 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     if (room >= 0) m.room = room;
   }
 
+  /** 약도 표식 입력 */
+  mapInput(): MarkerInput {
+    return {
+      floor: this.floorData,
+      exploration: this.exploration,
+      player: this.playerTile,
+      chests: this.chests.map((c) => ({ x: Math.floor(c.x / DISPLAY.tileSize), y: Math.floor(c.y / DISPLAY.tileSize) - 1, room: c.room, alive: c.alive, secret: c.secret })),
+      altar: this.floorData.altar && this.altar ? { ...this.floorData.altar, used: !!this.altar.getData('used') } : null,
+      redPortalClosed: !this.portals.some((p) => p.kind === 'red'),
+      bossDefeated: this.bossState === 'defeated',
+    };
+  }
+
+  /** 화면에 보인 출구/빨간 포탈을 발견 처리 (약도에 표시) */
+  protected discoverPortals(): void {
+    const v = this.cameras.main.worldView;
+    for (const p of this.portals) {
+      if ((p.kind === 'exit' || p.kind === 'red') && v.contains(p.x, p.y - 16)) this.exploration.discoveredPortals.add(p.kind);
+    }
+  }
+
   /** 카메라 화면(+여유) 안의 사각형인지 */
   protected nearView(x: number, y: number): boolean {
     const v = this.cameras.main.worldView;
@@ -941,6 +965,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.updateEscapeTimer(dt);
     this.updateSecretHint(dt);
     this.updateRoom();
+    this.discoverPortals();
     this.checkBoss();
     this.handlePortals(input);
     this.handleDebug();
