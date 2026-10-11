@@ -39,13 +39,13 @@ export interface Stats {
   lifestealOnHit: number;
   /** 추가 투사체 (궁수/마법사) */
   extraProjectiles: number;
-  /** 상자 보상 등급 상승 확률 */
-  chestTierBonus: number;
+  /** 아이템 등급 행운 가산 (높은 등급이 잘 나온다) */
+  itemLuck: number;
   /** 상자 보상 개수 가산 */
   chestAmount: number;
   /** 상자 등장 확률 배율 */
   chestChance: number;
-  /** 빨간 던전 보상 가산 (선택지 수) */
+  /** 빨간 던전 보스 아이템 선택지 가산 */
   redRewardBonus: number;
   /** 탈출 제한 시간 배율 */
   escapeTime: number;
@@ -87,7 +87,7 @@ export const DEFAULT_STATS: Readonly<Stats> = {
   critMultiplier: 1.5,
   lifestealOnHit: 0,
   extraProjectiles: 0,
-  chestTierBonus: 0,
+  itemLuck: 0,
   chestAmount: 0,
   chestChance: 1,
   redRewardBonus: 0,

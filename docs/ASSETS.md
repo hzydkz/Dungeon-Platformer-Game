@@ -62,6 +62,7 @@
 | `proj_enemy` | `sprites/proj_enemy.png` | 6×6 (가로로 1칸 이상) | - |
 | `proj_boss` | `sprites/proj_boss.png` | 10×10 (가로로 1칸 이상) | - |
 | `pickup_heal` | `sprites/pickup_heal.png` | 8×8 (가로로 1칸 이상) | - |
+| `shopkeeper` | `sprites/shopkeeper.png` | 16×24 (가로로 2칸 이상) | `shopkeeper_idle` [0,1] 2fps 반복 |
 
 ### 타일셋
 

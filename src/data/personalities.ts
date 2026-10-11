@@ -25,7 +25,7 @@ export const PERSONALITIES: readonly PersonalityDef[] = [
   {
     id: 'reckless',
     name: '무모',
-    description: '빨간 던전 보상 선택지 +1, 받는 피해 +10%',
+    description: '빨간 던전 보스 아이템 선택지 +1, 받는 피해 +10%',
     modifiers: [
       { stat: 'redRewardBonus', op: 'add', value: 1 },
       { stat: 'damageTaken', op: 'mul', value: 1.1 },

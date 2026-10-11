@@ -3,6 +3,7 @@ import { DISPLAY } from '../config/display';
 import { formatPlayTime, type RunState } from '../core/run';
 import { roleById } from '../data/roles';
 import { Controls } from '../input/Controls';
+import { centerBaseLayout } from '../ui/layout';
 import { textStyle } from '../ui/text';
 import { RegistryKey, SceneKey } from './keys';
 
@@ -21,10 +22,11 @@ export class GameOverScene extends Phaser.Scene {
 
   create(): void {
     this.controls = new Controls(this);
-    this.readyAt = this.time.now + 800;
+    this.readyAt = -1;
     const run = this.registry.get(RegistryKey.run) as RunState;
     const cx = DISPLAY.width / 2;
     this.cameras.main.setBackgroundColor('#07060d');
+    centerBaseLayout(this);
     const t = this.title();
     this.add.text(cx, 56, t.text, textStyle('large', t.color)).setOrigin(0.5).setScale(2);
     const time = formatPlayTime(performance.now() - run.startedAt);
@@ -32,6 +34,7 @@ export class GameOverScene extends Phaser.Scene {
       `도달 층: ${run.floor}층`,
       `처치한 보스: ${run.bossesKilled}`,
       `처치한 몬스터: ${run.kills}`,
+      `레벨: Lv ${run.level}`,
       `역할군: ${roleById(run.character.role).name}`,
       `플레이 시간: ${time}`,
       `시드: ${run.runSeed}`,
@@ -43,6 +46,8 @@ export class GameOverScene extends Phaser.Scene {
 
   override update(_t: number, dms: number): void {
     const input = this.controls.update(dms / 1000);
+    // create 시점에는 씬 시계가 아직 갱신 전이라 첫 update에서 정한다
+    if (this.readyAt < 0) this.readyAt = this.time.now + 800;
     if (this.time.now > this.readyAt && input.confirmPressed) this.scene.start(SceneKey.Title);
   }
 }

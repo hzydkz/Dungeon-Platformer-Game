@@ -2,7 +2,6 @@ import Phaser from 'phaser';
 import existingFiles from 'virtual:asset-files';
 import { MANIFEST } from '../assets/keys';
 import { TILESET_SLOTS, animationKey } from '../core/assets/manifest';
-import { DISPLAY } from '../config/display';
 import { createMissingPlaceholders } from './placeholders';
 import { SceneKey } from './keys';
 
@@ -17,7 +16,7 @@ export class PreloadScene extends Phaser.Scene {
   }
 
   preload(): void {
-    const bar = this.add.rectangle(DISPLAY.width / 2 - 100, DISPLAY.height / 2, 0, 4, 0xffffff).setOrigin(0, 0.5);
+    const bar = this.add.rectangle(this.scale.width / 2 - 100, this.scale.height / 2, 0, 4, 0xffffff).setOrigin(0, 0.5);
     this.load.on('progress', (p: number) => bar.setSize(200 * p, 4));
     this.load.on('loaderror', (file: Phaser.Loader.File) => this.failed.add(file.key));
 

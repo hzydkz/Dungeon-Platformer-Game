@@ -1,11 +1,11 @@
 import Phaser from 'phaser';
 import { DEBUG } from './config/debug';
-import { DISPLAY } from './config/display';
+import { DISPLAY, VIEW } from './config/display';
 import { MOVEMENT } from './config/movement';
-import { computeIntegerZoom } from './core/display';
+import { computeView } from './core/display';
 import { BootScene } from './scenes/BootScene';
 import { PreloadScene } from './scenes/PreloadScene';
-import { RewardScene } from './scenes/RewardScene';
+import { ItemScene } from './scenes/ItemScene';
 import { CharacterSelectScene } from './scenes/CharacterSelectScene';
 import { FloorScene } from './scenes/FloorScene';
 import { GameOverScene, VictoryScene } from './scenes/GameOverScene';
@@ -14,23 +14,23 @@ import { TitleScene } from './scenes/TitleScene';
 import { HudScene } from './scenes/HudScene';
 import { loadFonts } from './ui/text';
 
-const currentZoom = (): number =>
-  computeIntegerZoom(window.innerWidth, window.innerHeight, DISPLAY.width, DISPLAY.height);
+const currentView = () => computeView(window.innerWidth, window.innerHeight, DISPLAY.width, DISPLAY.height, VIEW.maxWidth, VIEW.maxHeight);
+const initialView = currentView();
 
 await loadFonts();
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'game',
-  width: DISPLAY.width,
-  height: DISPLAY.height,
+  width: initialView.width,
+  height: initialView.height,
   backgroundColor: DISPLAY.backgroundColor,
   pixelArt: true,
   roundPixels: true,
   scale: {
     mode: Phaser.Scale.NONE,
     autoCenter: Phaser.Scale.CENTER_BOTH,
-    zoom: currentZoom(),
+    zoom: initialView.zoom,
   },
   input: {
     gamepad: true,
@@ -43,13 +43,17 @@ const game = new Phaser.Game({
       tileBias: 16,
     },
   },
-  scene: [BootScene, PreloadScene, TitleScene, CharacterSelectScene, FloorScene, new FloorScene(SceneKey.RedDungeon), HudScene, RewardScene, GameOverScene, VictoryScene],
+  scene: [BootScene, PreloadScene, TitleScene, CharacterSelectScene, FloorScene, new FloorScene(SceneKey.RedDungeon), HudScene, ItemScene, GameOverScene, VictoryScene],
 });
 
-// 창 크기가 바뀌면 정수배 확대 배율을 다시 계산한다.
-window.addEventListener('resize', () => {
-  game.scale.setZoom(currentZoom());
-});
+// 창 크기/방향이 바뀌면 보이는 범위와 배율을 다시 계산한다. 씬은 scale 'resize' 이벤트로 배치를 갱신한다.
+const applyView = () => {
+  const v = currentView();
+  if (game.scale.width !== v.width || game.scale.height !== v.height) game.scale.resize(v.width, v.height);
+  game.scale.setZoom(v.zoom);
+};
+window.addEventListener('resize', applyView);
+window.addEventListener('orientationchange', () => setTimeout(applyView, 200));
 
 // 디버그 빌드: 자동 검증 스크립트가 게임 상태를 읽을 수 있게 노출
 if (DEBUG.enabled) {

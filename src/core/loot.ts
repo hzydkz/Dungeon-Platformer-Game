@@ -1,47 +1,50 @@
 /**
- * 상자 보상, 강화 선택지 (기획서 8.7, 5.6). Phaser 비의존.
+ * 상자 보상, 보스/제단 아이템 (기획서 8.7, 5.6 + 기획자 요청). Phaser 비의존.
+ * 상자는 회복이나 골드만 준다. 아이템은 보스, 빨간 던전 보스, 제단, 상점에서 얻는다.
  */
 import type { RoleId } from '../assets/keys';
-import { REWARDS } from '../config/rewards';
-import { UPGRADES, type UpgradeDef, type UpgradeTier } from '../data/upgrades';
+import { ECONOMY, ITEMS } from '../config/items';
+import type { ItemInstance } from '../data/items';
 import type { Stats } from './combat/stats';
+import { itemLuck, rollItem, rollItemChoices } from './items';
 import type { Rng } from './rng';
 
-export type ChestItem = { readonly kind: 'heal'; readonly ratio: number } | { readonly kind: 'upgrade'; readonly id: string };
+export type ChestItem = { readonly kind: 'heal'; readonly ratio: number } | { readonly kind: 'gold'; readonly amount: number };
 
-function eligible(tier: UpgradeTier, role: RoleId): UpgradeDef[] {
-  return UPGRADES.filter((u) => u.tier === tier && (!u.roles || u.roles.includes(role)));
+/** 난이도 레벨의 골드 배율 */
+export function goldScale(level: number): number {
+  return 1 + ECONOMY.goldPerLevel * Math.max(0, level - 1);
 }
 
-/** 상자 열기: 기본 1개 + 성격(탐욕) 가산. 소형 강화는 행운아 확률로 일반 강화가 된다 */
-export function rollChest(rng: Rng, stats: Stats, role: RoleId): ChestItem[] {
+/** 상자 열기: 기본 1개 + 성격(탐욕) 가산. 각각 회복 또는 골드 */
+export function rollChest(rng: Rng, stats: Stats, level: number): ChestItem[] {
   const count = 1 + Math.max(0, Math.round(stats.chestAmount));
   const items: ChestItem[] = [];
+  const c = ECONOMY.chest;
   for (let i = 0; i < count; i++) {
-    if (rng.chance(REWARDS.chest.healChance)) {
-      items.push({ kind: 'heal', ratio: REWARDS.chest.healRatio });
-      continue;
-    }
-    const tierUp = rng.chance(REWARDS.chest.tierUpChance + stats.chestTierBonus);
-    const pool = eligible(tierUp ? 'normal' : 'minor', role);
-    items.push({ kind: 'upgrade', id: rng.pick(pool).id });
+    if (rng.chance(c.healChance)) items.push({ kind: 'heal', ratio: c.healRatio });
+    else items.push({ kind: 'gold', amount: Math.round(rng.int(c.gold[0], c.gold[1]) * goldScale(level)) });
   }
   return items;
 }
 
-export type RewardSource = 'floorBoss' | 'redBoss' | 'altar';
+export function monsterGold(rng: Rng, level: number): number {
+  return Math.round(rng.int(ECONOMY.monsterGold[0], ECONOMY.monsterGold[1]) * goldScale(level));
+}
 
-/** 보스 처치 강화 선택지 (서로 다른 강화). 빨간 던전은 상위 등급 + 성격(무모) 가산 */
-export function rewardChoices(rng: Rng, stats: Stats, role: RoleId, source: RewardSource): UpgradeDef[] {
-  const tier: UpgradeTier = source === 'redBoss' ? 'rare' : 'normal';
-  const count = source === 'altar' ? 1 : REWARDS.bossChoices + (source === 'redBoss' ? Math.round(stats.redRewardBonus) : 0);
-  const pool = eligible(tier, role);
-  // 상위 등급이 부족하면 일반 등급으로 채운다
-  const filler = tier === 'rare' ? eligible('normal', role) : [];
-  const picked = rng.shuffle(pool).slice(0, count);
-  for (const u of rng.shuffle(filler)) {
-    if (picked.length >= count) break;
-    if (!picked.includes(u)) picked.push(u);
-  }
-  return picked;
+export function bossGold(level: number, red: boolean): number {
+  return Math.round(ECONOMY.bossGold * level * (red ? ECONOMY.redBossGoldMultiplier : 1));
+}
+
+export type RewardSource = 'floorBoss' | 'redBoss';
+
+/** 보스 처치 아이템 선택지 (서로 다른 종류). 빨간 던전은 행운이 높고 성격(무모)이면 선택지 +1 */
+export function bossItemChoices(rng: Rng, stats: Stats, role: RoleId, source: RewardSource, floor: number): ItemInstance[] {
+  const count = ITEMS.bossChoices + (source === 'redBoss' ? Math.round(stats.redRewardBonus) : 0);
+  return rollItemChoices(rng, count, itemLuck(source, floor, stats.itemLuck), role);
+}
+
+/** 제단: 아이템 하나 */
+export function altarItem(rng: Rng, stats: Stats, role: RoleId, floor: number): ItemInstance {
+  return rollItem(rng, itemLuck('altar', floor, stats.itemLuck), role);
 }

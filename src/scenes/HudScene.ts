@@ -5,12 +5,14 @@ import { PROGRESSION } from '../config/progression';
 import { Controls } from '../input/Controls';
 import { addVignette } from '../fx/Scenery';
 import { SketchMap } from '../ui/SketchMap';
+import { onResize } from '../ui/layout';
+import { ITEMS } from '../config/items';
 import { textStyle } from '../ui/text';
 import type { HudSource } from './FloorScene';
 import { RegistryKey, SceneKey } from './keys';
 
 /**
- * HUD: 체력/스킬, 알림, 보스 체력, 탈출 타이머, 약도(Tab/M/View) (기획서 6장).
+ * HUD: 체력/스킬, 레벨/경험치, 골드, 아이템 칸, 알림, 보스 체력, 탈출 타이머, 약도(Tab/M/View를 누르는 동안) (기획서 6장).
  * 층 씬과 별도로 돌아서 카메라 흔들림 등의 영향을 받지 않는다.
  */
 export class HudScene extends Phaser.Scene {
@@ -24,6 +26,9 @@ export class HudScene extends Phaser.Scene {
   private timer!: Phaser.GameObjects.Text;
   private hpText!: Phaser.GameObjects.Text;
   private skillText!: Phaser.GameObjects.Text;
+  private levelText!: Phaser.GameObjects.Text;
+  private goldText!: Phaser.GameObjects.Text;
+  private slotGrades: Phaser.GameObjects.Text[] = [];
 
   constructor() {
     super(SceneKey.Hud);
@@ -51,6 +56,15 @@ export class HudScene extends Phaser.Scene {
       .setDepth(25)
       .setVisible(false);
     this.bossName = this.add.text(DISPLAY.width / 2, DISPLAY.height - 26, '', textStyle('small', '#e0c8ff')).setOrigin(0.5, 0).setDepth(10);
+    // 화면이 넓어지면 오른쪽/가운데/아래에 붙는 요소를 다시 배치한다
+    onResize(this, () => {
+      const w = this.scale.width;
+      const h = this.scale.height;
+      this.floorLabel.setX(w - 4);
+      this.notice.setX(w / 2);
+      this.timer.setX(w / 2);
+      this.bossName.setPosition(w / 2, h - 26);
+    });
   }
 
   /** 화면 상단 중앙 알림 (기획서 7.2: 빨간 포탈 알림 3초 등) */
@@ -76,8 +90,8 @@ export class HudScene extends Phaser.Scene {
     if (!b) return;
     const g = this.bars;
     const w = 220;
-    const x = (DISPLAY.width - w) / 2;
-    const y = DISPLAY.height - 12;
+    const x = (this.scale.width - w) / 2;
+    const y = this.scale.height - 12;
     g.fillStyle(0x000000, 0.7).fillRect(x - 2, y - 2, w + 4, 8);
     g.fillStyle(0x301040, 1).fillRect(x, y, w, 4);
     g.fillStyle(0xa050e0, 1).fillRect(x, y, Math.round(w * Math.max(0, b.hp / b.maxHp)), 4);
@@ -88,6 +102,36 @@ export class HudScene extends Phaser.Scene {
     this.bars = this.add.graphics().setDepth(10);
     this.hpText = this.add.text(6, 13, '', textStyle('tiny', '#ffffff')).setDepth(11);
     this.skillText = this.add.text(6, 30, '', textStyle('tiny', '#c8c0e8')).setDepth(11);
+    this.levelText = this.add.text(6, 41, '', textStyle('tiny', '#fff080')).setDepth(11);
+    this.goldText = this.add.text(60, 41, '', textStyle('tiny', '#ffd860')).setDepth(11);
+    this.slotGrades = [];
+    for (let i = 0; i < ITEMS.slots; i++) {
+      this.slotGrades.push(this.add.text(4 + i * 17 + 7, 66 + 7, '', textStyle('small', '#ffffff')).setOrigin(0.5).setDepth(11));
+    }
+  }
+
+  /** 레벨/경험치 바, 골드, 아이템 칸 (이름과 효과는 지도 화면에서) */
+  private drawStatus(src: HudSource): void {
+    const st = src.status;
+    const g = this.bars;
+    this.levelText.setText(`Lv ${st.level}`);
+    this.goldText.setText(`${st.gold} G`);
+    g.fillStyle(0x000000, 0.6).fillRect(4, 52, 52, 5);
+    g.fillStyle(0xfff080, 1).fillRect(5, 53, Math.round(50 * Math.min(1, st.xp / Math.max(1, st.xpNext))), 3);
+    for (let i = 0; i < ITEMS.slots; i++) {
+      const x = 4 + i * 17;
+      const y = 66;
+      const it = st.items[i];
+      g.fillStyle(0x000000, 0.6).fillRect(x, y, 14, 14);
+      if (it) {
+        const color = Phaser.Display.Color.HexStringToColor(ITEMS.gradeColors[it.grade]).color;
+        g.lineStyle(1, color, 1).strokeRect(x + 0.5, y + 0.5, 13, 13);
+        this.slotGrades[i]!.setText(it.grade).setColor(ITEMS.gradeColors[it.grade]);
+      } else {
+        g.lineStyle(1, 0x50486a, 1).strokeRect(x + 0.5, y + 0.5, 13, 13);
+        this.slotGrades[i]!.setText('');
+      }
+    }
   }
 
   /** 체력 바, 마나/쿨타임/차지 바 */
@@ -140,10 +184,11 @@ export class HudScene extends Phaser.Scene {
     }
     if (!src) return;
     this.drawBars(src);
+    this.drawStatus(src);
     this.drawBossBar(src);
     this.drawTimer(src);
-    if (input.mapPressed) this.sketch.toggle(src);
+    this.sketch.setShown(input.mapHeld, src);
     this.sketch.update(src);
-    this.floorLabel.setText(`${src.label}\n지도: Tab/M` + (DEBUG.enabled ? `\nseed ${src.floorData.seed}` : ''));
+    this.floorLabel.setText(`${src.label}\n지도: Tab/M 누르기` + (DEBUG.enabled ? `\nseed ${src.floorData.seed}` : ''));
   }
 }

@@ -7,7 +7,7 @@ export const SceneKey = {
   Floor: 'Floor',
   RedDungeon: 'RedDungeon',
   Hud: 'Hud',
-  Reward: 'Reward',
+  Item: 'Item',
   GameOver: 'GameOver',
   Victory: 'Victory',
 } as const;

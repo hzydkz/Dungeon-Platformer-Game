@@ -21,6 +21,7 @@ export const AssetKey = {
   portalRed: 'portal_red',
   chest: 'chest',
   altar: 'altar',
+  shopkeeper: 'shopkeeper',
   slash: 'fx_slash',
   particle: 'fx_particle',
   arrow: 'proj_arrow',

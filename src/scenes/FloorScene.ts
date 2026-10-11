@@ -16,7 +16,10 @@ import { lineOfSight } from '../core/combat/los';
 import type { Stats } from '../core/combat/stats';
 import { generateFloor, type FloorKind, type GeneratedFloor, type TilePos } from '../core/generation/floor';
 import { escapeTimeForLayout } from '../core/escape';
-import { rewardChoices, rollChest, type RewardSource } from '../core/loot';
+import { altarItem, bossGold, bossItemChoices, monsterGold, rollChest, type RewardSource } from '../core/loot';
+import { itemPrice, potionPrice, rollItemChoices, itemLuck } from '../core/items';
+import { addXp, killXp, xpToNext } from '../core/level';
+import type { ItemInstance } from '../data/items';
 import { secretHintVisible } from '../core/secret';
 import { Exploration } from '../core/map/exploration';
 import type { MarkerInput } from '../core/map/markers';
@@ -25,7 +28,7 @@ import type { RunState } from '../core/run';
 import { Tile, getTile, isHazardTile, isOneWayTile, isSolidTile, setTile } from '../core/tiles';
 import { CATALOG } from '../data/catalog';
 import { REWARDS } from '../config/rewards';
-import { upgradeById, type UpgradeDef } from '../data/upgrades';
+import { LEVEL, SHOP } from '../config/items';
 import { monsterById, monsterTable } from '../data/monsters';
 import { roleById } from '../data/roles';
 import { bossForFloor } from '../data/bosses';
@@ -41,7 +44,8 @@ import { Controls, type InputFrame } from '../input/Controls';
 import { textStyle } from '../ui/text';
 import { buildTilemap, setMapTile } from './tilemap';
 import type { HudScene } from './HudScene';
-import type { RewardReceiver, RewardSceneData } from './RewardScene';
+import type { ItemReceiver, ItemSceneData, ShopStock } from './ItemScene';
+import { onResize } from '../ui/layout';
 import { RegistryKey, SceneKey } from './keys';
 
 export interface FloorSceneData {
@@ -60,8 +64,18 @@ export interface HudSource {
   readonly bossBar: { readonly name: string; readonly hp: number; readonly maxHp: number } | null;
   /** 빨간 던전 탈출 남은 시간 (초). 타이머가 없으면 null */
   readonly escapeTimeLeft: number | null;
+  /** 레벨, 경험치, 골드, 아이템 */
+  readonly status: PlayerStatus;
   /** 약도에 그릴 상태 */
   mapInput(): MarkerInput;
+}
+
+export interface PlayerStatus {
+  readonly items: readonly ItemInstance[];
+  readonly level: number;
+  readonly xp: number;
+  readonly xpNext: number;
+  readonly gold: number;
 }
 
 export type BossFightState = 'waiting' | 'fighting' | 'defeated';
@@ -70,7 +84,7 @@ export type BossFightState = 'waiting' | 'fighting' | 'defeated';
  * 층 씬: 절차 생성된 층을 탐사하고 전투한다.
  * 같은 클래스를 빨간 던전(다른 씬 키)에도 쓴다.
  */
-export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, MonsterWorld, BossWorld, RewardReceiver {
+export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, MonsterWorld, BossWorld, ItemReceiver {
   floorData!: GeneratedFloor;
   exploration!: Exploration;
   currentRoom = -1;
@@ -102,6 +116,8 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
   protected chests: Chest[] = [];
   protected chestGroup!: Phaser.Physics.Arcade.StaticGroup;
   protected altar: Phaser.GameObjects.Sprite | null = null;
+  protected shopkeeper: Phaser.GameObjects.Sprite | null = null;
+  protected shopStock: ShopStock | null = null;
   private hintTimer = 0;
   private hintedRooms = new Set<number>();
   private trapNoticeRooms = new Set<number>();
@@ -141,6 +157,8 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.escapeTimeLeft = null;
     this.chests = [];
     this.altar = null;
+    this.shopkeeper = null;
+    this.shopStock = null;
     this.hintTimer = 0;
     this.hintedRooms = new Set();
     this.trapNoticeRooms = new Set();
@@ -149,7 +167,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
   create(): void {
     this.run = this.registry.get(RegistryKey.run) as RunState;
     this.theme = themeForFloor(this.kind === 'red' ? Math.min(9, this.floorNumber + PROGRESSION.redDifficultyBonus) : this.floorNumber);
-    this.stats = characterStats(this.run.character, this.run.upgrades, CATALOG);
+    this.stats = this.computeStats();
     this.floorData = generateFloor({
       runSeed: this.run.runSeed,
       floor: this.floorNumber,
@@ -184,6 +202,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.spawnMonsters();
     this.setupBoss();
     this.setupExploration();
+    this.setupShop();
 
     // 보스전 외에는 방 경계가 아니라 층 전체를 부드럽게 따라간다
     const cam = this.cameras.main;
@@ -200,7 +219,9 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     else this.scene.bringToTop(SceneKey.Hud);
 
     if (DEBUG.enabled) {
-      this.debugText = this.add.text(2, DISPLAY.height - 10, '', textStyle('tiny', '#9090b0')).setScrollFactor(0).setDepth(1000);
+      const dt = this.add.text(2, DISPLAY.height - 10, '', textStyle('tiny', '#9090b0')).setScrollFactor(0).setDepth(1000);
+      this.debugText = dt;
+      onResize(this, () => dt.setY(this.scale.height - 10));
     }
 
     // HUD가 뜬 다음 프레임에 층 알림
@@ -346,18 +367,17 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     if (!chest.hurt()) return;
     this.fx.sound('sfx_chest', 0.6);
     this.fx.burst(chest.x, chest.y - 8, 0xffd060, 12, 90);
-    const items = rollChest(this.lootRng, this.stats, this.run.character.role);
+    const items = rollChest(this.lootRng, this.stats, this.difficultyLevel);
     const lines: string[] = [];
     for (const it of items) {
       if (it.kind === 'heal') {
         this.combat.hp = applyHeal(this.stats, this.combat.hp, this.stats.maxHp * it.ratio);
         lines.push('회복');
       } else {
-        this.run.upgrades.push(it.id);
-        lines.push(upgradeById(it.id).name);
+        this.run.gold += it.amount;
+        lines.push(`${it.amount} G`);
       }
     }
-    this.refreshStats();
     this.hud()?.notify(`상자: ${lines.join(', ')}`, 2.5, '#ffe080');
   }
 
@@ -401,12 +421,75 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     if (this.anims.exists(anim)) this.altar.play(anim);
     this.combat.hp -= cost;
     this.fx.burst(this.altar.x, this.altar.y - 12, 0x6fd6c8, 16, 90);
-    const [u] = rewardChoices(this.lootRng, this.stats, this.run.character.role, 'altar');
-    if (u) {
-      this.run.upgrades.push(u.id);
-      this.refreshStats();
-      this.hud()?.notify(`제단에 피를 바쳤다: ${u.name}`, 3, '#80f0e0');
-    }
+    const item = altarItem(this.lootRng, this.stats, this.run.character.role, this.floorNumber);
+    this.openItemScene({ mode: 'give', title: '제단에 피를 바쳤다', item, resume: this.scene.key });
+  }
+
+  // ---------- 상점 (층마다 1곳) ----------
+
+  protected setupShop(): void {
+    const sp = this.floorData.shop;
+    if (!sp) return;
+    const s = DISPLAY.tileSize;
+    this.shopkeeper = this.add.sprite(sp.x * s + s / 2, (sp.y + 1) * s, AssetKey.shopkeeper, 0).setOrigin(0.5, 1).setDepth(5);
+    const anim = `${AssetKey.shopkeeper}_idle`;
+    if (this.anims.exists(anim)) this.shopkeeper.play(anim);
+    this.add
+      .text(this.shopkeeper.x, this.shopkeeper.y - 30, '상점 ↑', textStyle('tiny', '#ffd860', { stroke: '#000000', strokeThickness: 2 }))
+      .setOrigin(0.5, 1)
+      .setDepth(6);
+    const rng = new Rng(deriveSeed(this.floorData.seed, 'shop'));
+    const luck = itemLuck('shop', this.floorNumber, this.stats.itemLuck);
+    this.shopStock = {
+      items: rollItemChoices(rng, SHOP.stock, luck, this.run.character.role).map((item) => ({ item, price: itemPrice(item, this.floorNumber), sold: false })),
+      potionPrice: potionPrice(this.floorNumber),
+      potionsLeft: SHOP.potion.count,
+    };
+  }
+
+  protected openShop(): void {
+    if (!this.shopStock) return;
+    this.openItemScene({ mode: 'shop', stock: this.shopStock, resume: this.scene.key });
+  }
+
+  protected openItemScene(data: ItemSceneData): void {
+    this.scene.pause();
+    this.scene.launch(SceneKey.Item, data);
+    this.scene.bringToTop(SceneKey.Item);
+  }
+
+  // ---------- ItemReceiver ----------
+
+  onItemMessage(text: string, color: string): void {
+    this.hud()?.notify(text, 2.5, color);
+  }
+
+  healRatio(ratio: number): void {
+    this.combat.hp = applyHeal(this.stats, this.combat.hp, this.stats.maxHp * ratio);
+    this.fx.burst(this.player.x, this.player.y, 0x50e070, 10, 60);
+  }
+
+  hpFull(): boolean {
+    return this.combat.hp >= this.stats.maxHp;
+  }
+
+  // ---------- 레벨, 골드 ----------
+
+  protected gainXp(amount: number): void {
+    const gained = addXp(this.run, amount);
+    if (gained <= 0) return;
+    this.refreshStats();
+    this.combat.hp = applyHeal(this.stats, this.combat.hp, this.stats.maxHp * LEVEL.levelUpHealRatio);
+    this.fx.burst(this.player.x, this.player.y - 6, 0xfff080, 20, 110);
+    this.fx.sound('sfx_chest', 0.5);
+    this.floatText(this.player.x, this.player.y - 24, `레벨 업! Lv ${this.run.level}`, '#fff080');
+    this.hud()?.notify(`레벨 업! Lv ${this.run.level} (체력·공격력 상승)`, 2, '#fff080');
+  }
+
+  protected gainGold(amount: number, x: number, y: number): void {
+    if (amount <= 0) return;
+    this.run.gold += amount;
+    this.floatText(x, y, `+${amount}G`, '#ffd860');
   }
 
   /** 성격 '호기심': 비밀 벽 근처에서 반짝임 힌트 */
@@ -427,19 +510,9 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
   // ---------- 보상 (기획서 8.7) ----------
 
   protected openReward(source: RewardSource): void {
-    const choices = rewardChoices(this.lootRng, this.stats, this.run.character.role, source);
+    const choices = bossItemChoices(this.lootRng, this.stats, this.run.character.role, source, this.floorNumber);
     if (choices.length === 0) return;
-    this.scene.pause();
-    this.scene.launch(SceneKey.Reward, {
-      choices: choices.map((u) => u.id),
-      title: source === 'redBoss' ? '상위 강화 선택' : '강화 선택',
-      resume: this.scene.key,
-    } satisfies RewardSceneData);
-    this.scene.bringToTop(SceneKey.Reward);
-  }
-
-  onRewardChosen(u: UpgradeDef): void {
-    this.hud()?.notify(`강화: ${u.name}`, 2, '#ffe8a0');
+    this.openItemScene({ mode: 'pick', title: source === 'redBoss' ? '빨간 던전 보상: 아이템 선택' : '보스 보상: 아이템 선택', choices, resume: this.scene.key });
   }
 
   // ---------- 보스 ----------
@@ -460,6 +533,11 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.physics.add.overlap(this.player, this.boss, () => {
       if (this.boss && this.boss.alive && this.boss.fighting) this.combat.hurt(this.boss.contactDamage, this.boss.x, this.boss.def.name, this.boss);
     });
+  }
+
+  get status(): PlayerStatus {
+    const r = this.run;
+    return { items: r.items, level: r.level, xp: r.xp, xpNext: xpToNext(r.level), gold: r.gold };
   }
 
   get bossBar(): HudSource['bossBar'] {
@@ -631,10 +709,15 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     const heal = healOnKill(this.stats);
     if (heal > 0) this.combat.heal(heal);
     if (target instanceof Boss) {
+      const red = this.kind === 'red';
+      this.gainXp(killXp(red ? 'redBoss' : 'boss', monsterScale(this.difficultyLevel)));
+      this.gainGold(bossGold(this.difficultyLevel, red), target.x, target.y - 40);
       this.endBossFight();
       return;
     }
     if (target instanceof Monster) {
+      this.gainXp(killXp('monster', monsterScale(this.difficultyLevel)));
+      this.gainGold(monsterGold(this.lootRng, this.difficultyLevel), target.x, target.y - 14);
       this.fx.burst(target.x, target.y - 6, 0xe04848, 12, 100);
       if (this.lootRng.chance(COMBAT.drops.healChance)) this.dropHeal(target.x, target.y - 8);
       this.tweens.add({ targets: target, alpha: 0, duration: 200, onComplete: () => target.setVisible(false) });
@@ -749,6 +832,10 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     if (!input.upPressed) return;
     for (const c of this.chests) if (c.alive && c.contains(this.player.x, this.player.y)) this.openChest(c);
     if (this.altar && Math.abs(this.altar.x - this.player.x) < 12 && Math.abs(this.altar.y - 12 - this.player.y) < 20) this.useAltar();
+    if (this.shopkeeper && Math.abs(this.shopkeeper.x - this.player.x) < 14 && Math.abs(this.shopkeeper.y - 12 - this.player.y) < 20) {
+      this.openShop();
+      return;
+    }
     for (const p of this.portals) {
       if (!p.active || !p.contains(this.player.x, this.player.y)) continue;
       if (p.kind === 'exit') this.goToNextFloor();
@@ -812,10 +899,14 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.hud()?.notify('빨간 포탈이 닫혔습니다', 2, '#ff8080');
   }
 
-  /** 강화 등으로 스탯이 바뀌면 다시 계산 */
+  protected computeStats(): Stats {
+    return characterStats(this.run.character, { items: this.run.items, level: this.run.level }, CATALOG);
+  }
+
+  /** 아이템/레벨로 스탯이 바뀌면 다시 계산 */
   refreshStats(): void {
     const prevMax = this.stats.maxHp;
-    this.stats = characterStats(this.run.character, this.run.upgrades, CATALOG);
+    this.stats = this.computeStats();
     this.combat.stats = this.stats;
     if (this.stats.maxHp > prevMax) this.combat.heal(this.stats.maxHp - prevMax);
     this.combat.hp = Math.min(this.combat.hp, this.stats.maxHp);
@@ -865,6 +956,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
       player: this.playerTile,
       chests: this.chests.map((c) => ({ x: Math.floor(c.x / DISPLAY.tileSize), y: Math.floor(c.y / DISPLAY.tileSize) - 1, room: c.room, alive: c.alive, secret: c.secret })),
       altar: this.floorData.altar && this.altar ? { ...this.floorData.altar, used: !!this.altar.getData('used') } : null,
+      shop: this.floorData.shop,
       redPortalClosed: !this.portals.some((p) => p.kind === 'red'),
       bossDefeated: this.bossState === 'defeated',
     };

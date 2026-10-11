@@ -2,6 +2,7 @@
  * 런 상태 (한 번의 플레이). 사망하면 버려진다 (순수 로그라이크, 기획서 1장). Phaser 비의존.
  */
 import type { RoleId } from '../assets/keys';
+import type { ItemInstance } from '../data/items';
 
 export interface CharacterChoice {
   readonly role: RoleId;
@@ -17,8 +18,12 @@ export interface RunState {
   bossesKilled: number;
   kills: number;
   character: CharacterChoice;
-  /** 획득한 강화 id (같은 강화를 여러 번 얻을 수 있다) */
-  upgrades: string[];
+  /** 아이템 칸 (최대 ITEMS.slots개) */
+  items: ItemInstance[];
+  gold: number;
+  level: number;
+  /** 현재 레벨에서 모은 경험치 */
+  xp: number;
   hp: number;
   /** 결과 */
   outcome: 'playing' | 'dead' | 'victory';
@@ -33,7 +38,10 @@ export function createRun(runSeed: number, now: number, character: CharacterChoi
     bossesKilled: 0,
     kills: 0,
     character,
-    upgrades: [],
+    items: [],
+    gold: 0,
+    level: 1,
+    xp: 0,
     hp: -1,
     outcome: 'playing',
     deathCause: '',

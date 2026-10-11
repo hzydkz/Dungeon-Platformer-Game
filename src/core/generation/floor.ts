@@ -79,6 +79,8 @@ export interface GeneratedFloor {
   /** 부서지는 벽 타일 (비밀 벽) */
   readonly secretWalls: readonly SpawnPoint[];
   readonly altar: SpawnPoint | null;
+  /** 상점 주인 위치 (일반 층마다 1곳, 빨간 던전에는 없음). 상점 방에는 몬스터가 없다 */
+  readonly shop: SpawnPoint | null;
 }
 
 export function layoutParamsFor(opts: FloorGenOptions, rng: Rng): LayoutParams {
@@ -211,8 +213,20 @@ function assemble(opts: FloorGenOptions, lib: TemplateLibrary, rng: Rng, layout:
       altar = { x: spot.x, y: spot.y, room: room.index };
     }
   }
-  // 상자와 제단이 같은 칸에 겹치지 않게
-  const filteredChests = altar ? chests.filter((ch) => !(ch.x === altar!.x && ch.y === altar!.y)) : chests;
+  // 상점: 제단/함정이 없는 일반 방 하나의 포탈 후보 위치 (기획자 요청)
+  let shop: SpawnPoint | null = null;
+  if (opts.kind === 'floor') {
+    const pool = rooms.filter((r) => r.role === 'normal' && !r.trap && r.index !== altar?.room && portalsOf(r.index).length > 0);
+    if (pool.length) {
+      const room = rng.pick(pool);
+      const spot = rng.pick(portalsOf(room.index));
+      shop = { x: spot.x, y: spot.y, room: room.index };
+    }
+  }
+  // 상자와 제단/상점이 같은 칸에 겹치지 않게, 상점 방에는 몬스터를 두지 않는다
+  const taken = [altar, shop].filter((p): p is SpawnPoint => p !== null);
+  const filteredChests = chests.filter((ch) => !taken.some((p) => p.x === ch.x && p.y === ch.y));
+  const filteredMonsters = shop ? monsters.filter((m) => m.room !== shop!.room) : monsters;
 
   if (!bossSpawn) throw new Error('아레나에 보스 스폰 없음');
   return {
@@ -225,10 +239,11 @@ function assemble(opts: FloorGenOptions, lib: TemplateLibrary, rng: Rng, layout:
     exitPortal: exitPortal ? { x: exitPortal.x, y: exitPortal.y } : null,
     redPortal: redPortal ? { x: redPortal.x, y: redPortal.y } : null,
     boss: { room: layout.boss, spawn: bossSpawn, doorTiles: bossDoorTiles },
-    monsters,
+    monsters: filteredMonsters,
     chests: filteredChests,
     secretWalls,
     altar,
+    shop,
   };
 }
 
@@ -284,6 +299,7 @@ export function validateFloor(f: Omit<GeneratedFloor, 'seed' | 'usedSeed' | 'att
   standOk(f.entrance, '입구');
   standOk(f.exitPortal, '출구 포탈');
   standOk(f.redPortal, '빨간 포탈');
+  standOk(f.shop, '상점');
   if (L.exit >= 0 && !f.exitPortal) errors.push('출구 포탈 없음');
   return errors;
 }

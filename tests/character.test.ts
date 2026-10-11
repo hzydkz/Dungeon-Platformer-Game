@@ -17,7 +17,7 @@ import type { Stats } from '../src/core/combat/stats';
 import { escapeTimeSeconds } from '../src/core/escape';
 import { generateFloor } from '../src/core/generation/floor';
 import { MIN_SPEED_MULTIPLIER } from '../src/core/generation/params';
-import { rewardChoices, rollChest } from '../src/core/loot';
+import { bossItemChoices, rollChest } from '../src/core/loot';
 import { Exploration } from '../src/core/map/exploration';
 import { deriveMovementLimits } from '../src/core/movement/constraints';
 import { Rng } from '../src/core/rng';
@@ -26,11 +26,13 @@ import { CATALOG } from '../src/data/catalog';
 import { PERSONALITIES } from '../src/data/personalities';
 import { ROLES } from '../src/data/roles';
 import { TRAITS } from '../src/data/traits';
-import { UPGRADES } from '../src/data/upgrades';
+import { GRADES } from '../src/config/items';
+import { ITEM_DEFS, itemModifiers } from '../src/data/items';
+import { gradeWeights } from '../src/core/items';
 
-const base = (role = 'warrior' as const) => characterStats({ role, trait: null, personality: null }, [], CATALOG);
-const withTrait = (trait: string, role = 'warrior' as const) => characterStats({ role, trait, personality: null }, [], CATALOG);
-const withPers = (personality: string, role = 'warrior' as const) => characterStats({ role, trait: null, personality }, [], CATALOG);
+const base = (role = 'warrior' as const) => characterStats({ role, trait: null, personality: null }, {}, CATALOG);
+const withTrait = (trait: string, role = 'warrior' as const) => characterStats({ role, trait, personality: null }, {}, CATALOG);
+const withPers = (personality: string, role = 'warrior' as const) => characterStats({ role, trait: null, personality }, {}, CATALOG);
 
 /** 생성 옵션에 성격 효과를 넘겨 여러 시드로 층을 만든다 */
 function floorsWith(stats: Stats, n: number, floor = 4) {
@@ -67,7 +69,8 @@ describe('후보 생성 (기획서 8.1)', () => {
   });
 
   it('이동속도를 낮추는 효과는 도달성 검증 기준(가장 느린 배율) 이상이고, 그 속도로도 생성 제약을 만족한다', () => {
-    for (const src of [...TRAITS, ...PERSONALITIES, ...UPGRADES]) {
+    const itemSources = ITEM_DEFS.flatMap((d) => GRADES.map((g) => ({ id: `${d.id}_${g}`, modifiers: itemModifiers({ id: d.id, grade: g }) })));
+    for (const src of [...TRAITS, ...PERSONALITIES, ...itemSources]) {
       const mul = src.modifiers.filter((m) => m.stat === 'moveSpeed' && m.op === 'mul').reduce((a, m) => a * m.value, 1);
       expect(mul, src.id).toBeGreaterThanOrEqual(MIN_SPEED_MULTIPLIER);
     }
@@ -96,16 +99,16 @@ describe('특성 효과 (각각)', () => {
     expect(healOnKill(withTrait('vampire'))).toBeGreaterThan(0);
   });
 
-  it('행운아: 상자 보상 등급 상승(일반 강화)이 더 자주 나온다', () => {
-    const count = (s: Stats) => {
-      const rng = new Rng(9);
-      let normal = 0;
-      for (let i = 0; i < 2000; i++) {
-        for (const it of rollChest(rng, s, 'warrior')) if (it.kind === 'upgrade' && UPGRADES.find((u) => u.id === it.id)!.tier === 'normal') normal++;
-      }
-      return normal;
+  it('행운아: 아이템이 높은 등급으로 더 자주 나온다', () => {
+    const highGrades = (s: Stats) => {
+      let n = 0;
+      for (let i = 0; i < 400; i++) for (const it of bossItemChoices(new Rng(i), s, 'warrior', 'floorBoss', 1)) if ('BAS'.includes(it.grade)) n++;
+      return n;
     };
-    expect(count(withTrait('lucky'))).toBeGreaterThan(count(b) * 2);
+    expect(highGrades(withTrait('lucky'))).toBeGreaterThan(highGrades(b) * 1.15);
+    // 높은 등급 비율이 늘어도 F가 가장 흔하고 S가 가장 귀하다
+    const w = gradeWeights(withTrait('lucky').itemLuck + 1);
+    for (let i = 1; i < w.length; i++) expect(w[i]!).toBeLessThan(w[i - 1]!);
   });
 
   it('끈기: 체력 25% 이하에서만 공격력 +25%', () => {
@@ -153,8 +156,8 @@ describe('성격 효과 (각각)', () => {
 
   it('탐욕: 상자 보상 +1개, 함정 방이 더 자주 나온다', () => {
     const s = withPers('greedy');
-    expect(rollChest(new Rng(1), s, 'warrior')).toHaveLength(2);
-    expect(rollChest(new Rng(1), b, 'warrior')).toHaveLength(1);
+    expect(rollChest(new Rng(1), s, 1)).toHaveLength(2);
+    expect(rollChest(new Rng(1), b, 1)).toHaveLength(1);
     const traps = (st: Stats) => floorsWith(st, 60).reduce((n, f) => n + f.rooms.filter((r) => r.trap).length, 0);
     expect(traps(s)).toBeGreaterThan(traps(b));
   });
@@ -170,10 +173,10 @@ describe('성격 효과 (각각)', () => {
     expect(ex2.revealed.size).toBe(1);
   });
 
-  it('무모: 빨간 던전 보상 선택지 +1, 받는 피해 +10%', () => {
+  it('무모: 빨간 던전 보스 아이템 선택지 +1, 받는 피해 +10%', () => {
     const s = withPers('reckless');
-    expect(rewardChoices(new Rng(1), s, 'warrior', 'redBoss')).toHaveLength(4);
-    expect(rewardChoices(new Rng(1), b, 'warrior', 'redBoss')).toHaveLength(3);
+    expect(bossItemChoices(new Rng(1), s, 'warrior', 'redBoss', 3)).toHaveLength(4);
+    expect(bossItemChoices(new Rng(1), b, 'warrior', 'redBoss', 3)).toHaveLength(3);
     expect(incomingDamage(s, 100)).toBe(110);
   });
 
@@ -208,21 +211,23 @@ describe('성격 효과 (각각)', () => {
   });
 });
 
-describe('강화 선택지 (기획서 8.7)', () => {
-  it('층 보스 3개, 빨간 던전 보스는 상위 등급, 서로 다름, 역할 전용 강화는 해당 역할에만', () => {
+describe('보스 아이템 선택지', () => {
+  it('3개, 서로 다른 종류, 역할 전용 아이템은 해당 역할에만', () => {
     const s = base();
     for (let i = 0; i < 50; i++) {
-      const c = rewardChoices(new Rng(i), s, 'warrior', 'floorBoss');
+      const c = bossItemChoices(new Rng(i), s, 'warrior', 'floorBoss', 1 + (i % 9));
       expect(c).toHaveLength(3);
       expect(new Set(c.map((u) => u.id)).size).toBe(3);
-      expect(c.every((u) => u.tier === 'normal' && (!u.roles || u.roles.includes('warrior')))).toBe(true);
-      expect(rewardChoices(new Rng(i), s, 'mage', 'redBoss').every((u) => u.tier === 'rare')).toBe(true);
+      for (const it of c) {
+        const d = ITEM_DEFS.find((x) => x.id === it.id)!;
+        expect(!d.roles || d.roles.includes('warrior')).toBe(true);
+      }
     }
   });
 
-  it('강화를 얻으면 스탯에 반영된다', () => {
-    const s = characterStats({ role: 'warrior', trait: null, personality: null }, ['hp_up', 'hp_up', 'atk_up'], CATALOG);
-    expect(s.maxHp).toBe(ROLES[0]!.base.maxHp! + 40);
-    expect(s.attack).toBeCloseTo(1.15);
+  it('아이템을 가지면 스탯에 반영된다 (같은 아이템은 겹친다)', () => {
+    const s = characterStats({ role: 'warrior', trait: null, personality: null }, { items: [{ id: 'amulet', grade: 'C' }, { id: 'amulet', grade: 'F' }, { id: 'ring', grade: 'B' }] }, CATALOG);
+    expect(s.maxHp).toBe(ROLES[0]!.base.maxHp! + 26 + 8);
+    expect(s.attack).toBeCloseTo(1.18);
   });
 });

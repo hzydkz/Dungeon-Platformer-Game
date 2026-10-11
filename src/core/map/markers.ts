@@ -4,13 +4,14 @@
  * - 입구 포탈: 항상 표시 (출발점)
  * - 출구/빨간 포탈: 화면에 한 번 보인 뒤부터 (설정)
  * - 상자/제단: 공개된 방에 있을 때, 연 상자/쓴 제단은 흐리게
+ * - 상점: 처음부터 표시 (기획자 요청)
  * - 현재 위치
  */
 import { MAP } from '../../config/map';
 import type { GeneratedFloor } from '../generation/floor';
 import type { Exploration } from './exploration';
 
-export type MarkerKind = 'player' | 'boss' | 'entrance' | 'exit' | 'red' | 'chest' | 'altar';
+export type MarkerKind = 'player' | 'boss' | 'entrance' | 'exit' | 'red' | 'chest' | 'altar' | 'shop';
 
 export interface MapMarker {
   readonly kind: MarkerKind;
@@ -28,6 +29,8 @@ export interface MarkerInput {
   readonly player: { readonly x: number; readonly y: number };
   readonly chests: readonly { readonly x: number; readonly y: number; readonly room: number; readonly alive: boolean; readonly secret: boolean }[];
   readonly altar: { readonly x: number; readonly y: number; readonly room: number; readonly used: boolean } | null;
+  /** 상점 위치 (없으면 null) */
+  readonly shop?: { readonly x: number; readonly y: number } | null;
   /** 빨간 포탈이 이미 닫혔는지 */
   readonly redPortalClosed: boolean;
   readonly bossDefeated: boolean;
@@ -64,6 +67,7 @@ export function mapMarkers(input: MarkerInput, options: MarkerOptions = MAP): Ma
   if (input.altar && ex.revealed.has(input.altar.room)) {
     out.push({ kind: 'altar', x: input.altar.x, y: input.altar.y, label: '제단', spent: input.altar.used });
   }
+  if (input.shop) out.push({ kind: 'shop', x: input.shop.x, y: input.shop.y, label: '상점', spent: false });
   out.push({ kind: 'player', x: input.player.x, y: input.player.y, label: '현재 위치', spent: false });
   return out;
 }

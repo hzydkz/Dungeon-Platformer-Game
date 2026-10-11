@@ -10,6 +10,7 @@ import { PERSONALITIES } from '../data/personalities';
 import { roleById } from '../data/roles';
 import { TRAITS } from '../data/traits';
 import { Controls } from '../input/Controls';
+import { centerBaseLayout } from '../ui/layout';
 import { textStyle } from '../ui/text';
 import { RegistryKey, SceneKey } from './keys';
 
@@ -46,6 +47,7 @@ export class CharacterSelectScene extends Phaser.Scene {
   create(): void {
     this.controls = new Controls(this);
     this.cameras.main.setBackgroundColor('#07060d');
+    centerBaseLayout(this);
     this.candidates = generateCandidates(new Rng(deriveSeed(this.runSeed, 'characters')));
     this.add.text(DISPLAY.width / 2, 8, '캐릭터 선택', textStyle('large', '#e8e0ff')).setOrigin(0.5, 0);
     const gap = (DISPLAY.width - CARD_W * 3) / 4;
@@ -58,7 +60,7 @@ export class CharacterSelectScene extends Phaser.Scene {
     const role = roleById(c.role);
     const trait = TRAITS.find((t) => t.id === c.trait)!;
     const pers = PERSONALITIES.find((p) => p.id === c.personality)!;
-    const stats = characterStats(c, [], CATALOG);
+    const stats = characterStats(c, {}, CATALOG);
     const frame = this.add.rectangle(x, CARD_Y, CARD_W, CARD_H, 0x15121f, 1).setOrigin(0, 0).setStrokeStyle(1, 0x3a3450);
     this.frames.push(frame);
     const cont = this.add.container(x, CARD_Y);

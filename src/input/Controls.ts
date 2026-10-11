@@ -15,6 +15,8 @@ export interface InputFrame {
   upPressed: boolean;
   downHeld: boolean;
   mapPressed: boolean;
+  /** 지도 키를 누르고 있는가 (누르는 동안 약도 표시) */
+  mapHeld: boolean;
   confirmPressed: boolean;
   cancelPressed: boolean;
   /** 메뉴 이동 펄스 (-1, 0, 1). 스틱은 반복 간격마다 한 번씩 */
@@ -40,6 +42,8 @@ export class Controls {
   private latched = new Set<string>();
   private menuRepeatTimer = 0;
   private lastMenuDir = { x: 0, y: 0 };
+  /** 이 씬에서 메뉴 방향을 새로 누른 뒤 계속 누르고 있는 중 (이전 씬에서 누르던 방향은 반복하지 않는다) */
+  private menuHeldFromPress = false;
 
   constructor(private readonly scene: Phaser.Scene) {
     const kb = scene.input.keyboard;
@@ -161,7 +165,10 @@ export class Controls {
     let menuY = (downE.pressed ? 1 : 0) - (upMenuE.pressed ? 1 : 0);
     if (menuX !== 0 || menuY !== 0) {
       this.menuRepeatTimer = g.menuRepeat * 1.6;
-    } else if ((moveX !== 0 || moveY !== 0) && moveX === this.lastMenuDir.x && moveY === this.lastMenuDir.y) {
+      this.menuHeldFromPress = true;
+    } else if (moveX === 0 && moveY === 0) {
+      this.menuHeldFromPress = false;
+    } else if (this.menuHeldFromPress && moveX === this.lastMenuDir.x && moveY === this.lastMenuDir.y) {
       this.menuRepeatTimer -= dt;
       if (this.menuRepeatTimer <= 0) {
         menuX = moveX;
@@ -189,6 +196,7 @@ export class Controls {
       upPressed: upE.pressed,
       downHeld: down,
       mapPressed: mapE.pressed,
+      mapHeld: kMap || (pMap && this.padArmed.has('map')),
       confirmPressed: confirmE.pressed,
       cancelPressed: cancelE.pressed,
       menuX,

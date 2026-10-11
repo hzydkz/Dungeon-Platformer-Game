@@ -5,12 +5,17 @@ import type { GeneratedFloor } from '../core/generation/floor';
 import type { Exploration } from '../core/map/exploration';
 import { mapMarkers, type MapMarker, type MarkerInput } from '../core/map/markers';
 import { Tile, getTile, isSolidTile } from '../core/tiles';
+import { baseOffset, onResize } from './layout';
 import { textStyle } from './text';
+import { ITEMS } from '../config/items';
+import { itemDef, itemText, type ItemInstance } from '../data/items';
 
 export interface SketchSource {
   readonly floorData: GeneratedFloor;
   readonly exploration: Exploration;
   readonly label: string;
+  /** 가진 아이템, 레벨, 골드 (지도 아래쪽/제목 줄에 표시) */
+  readonly status: { readonly items: readonly ItemInstance[]; readonly level: number; readonly gold: number };
   mapInput(): MarkerInput;
 }
 
@@ -41,11 +46,14 @@ export class SketchMap {
   private cropX = 0;
   private cropY = 0;
   private lastFloor: GeneratedFloor | null = null;
+  private readonly status: Phaser.GameObjects.Text;
+  private readonly itemSlots: { box: Phaser.GameObjects.Rectangle; grade: Phaser.GameObjects.Text; name: Phaser.GameObjects.Text; desc: Phaser.GameObjects.Text }[] = [];
 
   constructor(private readonly scene: Phaser.Scene) {
     const p = MAP.panel;
     const c = MAP.colors;
-    const dim = scene.add.rectangle(0, 0, DISPLAY.width, DISPLAY.height, 0x000000, 0.55).setOrigin(0, 0);
+    // 화면이 기준보다 넓어도 덮이도록 크게 (컨테이너는 기준 배치를 화면 가운데에 둔다)
+    const dim = scene.add.rectangle(-DISPLAY.width, -DISPLAY.height, DISPLAY.width * 3, DISPLAY.height * 3, 0x000000, 0.55).setOrigin(0, 0);
     const paper = scene.add.graphics();
     paper.fillStyle(Phaser.Display.Color.HexStringToColor(c.paper).color, 1).fillRect(p.x, p.y, p.width, p.height);
     paper.fillStyle(Phaser.Display.Color.HexStringToColor(c.paperDark).color, 1);
@@ -58,19 +66,39 @@ export class SketchMap {
     this.icons = scene.add.graphics();
     this.labelLayer = scene.add.container(0, 0);
     const legend = scene.add
-      .text(p.x + 10, p.y + p.height - 14, '● 현재 위치   ◆ 보스   ● 포탈(발견하면)   ■ 상자   ▲ 제단', textStyle('tiny', c.ink))
+      .text(p.x + 10, p.y + p.height - 14, '● 현재 위치   ◆ 보스   ▣ 상점   ● 포탈(발견하면)   ■ 상자   ▲ 제단', textStyle('tiny', c.ink))
       .setOrigin(0, 0);
-    const close = scene.add.text(p.x + p.width - 10, p.y + p.height - 14, 'Tab / M / View 닫기', textStyle('tiny', c.unvisited)).setOrigin(1, 0);
-    this.root = scene.add.container(0, 0, [dim, paper, this.title, this.terrain, this.icons, this.labelLayer, legend, close]).setDepth(40).setVisible(false);
+    const close = scene.add.text(p.x + p.width - 10, p.y + p.height - 14, 'Tab / M / View 떼면 닫힘 · 이동 느려짐', textStyle('tiny', c.unvisited)).setOrigin(1, 0);
+    this.status = scene.add.text(p.x + p.width - 10, p.y + 7, '', textStyle('small', c.ink)).setOrigin(1, 0);
+    // 아이템 칸: 3열 (등급 상자, 이름, 효과)
+    const colW = Math.floor((p.width - 20) / ITEMS.slots);
+    const iy = p.y + MAP.itemsTop;
+    const slotObjs: Phaser.GameObjects.GameObject[] = [];
+    for (let i = 0; i < ITEMS.slots; i++) {
+      const x = p.x + 10 + i * colW;
+      const box = scene.add.rectangle(x, iy + 2, 14, 14, 0x2a2018, 1).setOrigin(0, 0);
+      const grade = scene.add.text(x + 7, iy + 9, '', textStyle('small', '#ffffff')).setOrigin(0.5);
+      const name = scene.add.text(x + 18, iy, '', textStyle('tiny', c.ink));
+      const desc = scene.add.text(x + 18, iy + 10, '', textStyle('tiny', c.unvisited));
+      this.itemSlots.push({ box, grade, name, desc });
+      slotObjs.push(box, grade, name, desc);
+    }
+    this.root = scene.add.container(0, 0, [dim, paper, this.title, this.status, this.terrain, this.icons, this.labelLayer, ...slotObjs, legend, close]).setDepth(40).setVisible(false);
+    onResize(scene, () => {
+      const o = baseOffset(scene);
+      this.root.setPosition(o.x, o.y);
+    });
   }
 
   get visible(): boolean {
     return this.root.visible;
   }
 
-  toggle(src: SketchSource): void {
-    this.root.setVisible(!this.root.visible);
-    if (this.root.visible) this.refresh(src, true);
+  /** 누르고 있는 동안 표시 (기획자 요청: Tab을 떼면 닫힘) */
+  setShown(shown: boolean, src: SketchSource): void {
+    if (shown === this.root.visible) return;
+    this.root.setVisible(shown);
+    if (shown) this.refresh(src, true);
   }
 
   hide(): void {
@@ -88,8 +116,29 @@ export class SketchMap {
   private refresh(src: SketchSource, terrain: boolean): void {
     this.refreshAt = this.scene.time.now + 300;
     this.title.setText(`${src.label} — 지도`);
+    this.drawStatus(src);
     if (terrain) this.drawTerrain(src);
     this.drawMarkers(src);
+  }
+
+  private drawStatus(src: SketchSource): void {
+    const st = src.status;
+    this.status.setText(`Lv ${st.level}   ${st.gold} G`);
+    this.itemSlots.forEach((slot, i) => {
+      const it = st.items[i];
+      if (!it) {
+        slot.box.setStrokeStyle(1, MAP.colors.frame, 0.5).setFillStyle(0x000000, 0);
+        slot.grade.setText('');
+        slot.name.setText('빈 칸');
+        slot.desc.setText('');
+        return;
+      }
+      const color = ITEMS.gradeColors[it.grade];
+      slot.box.setStrokeStyle(1, Phaser.Display.Color.HexStringToColor(color).color, 1).setFillStyle(0x2a2018, 1);
+      slot.grade.setText(it.grade).setColor(color);
+      slot.name.setText(itemDef(it.id).name);
+      slot.desc.setText(itemText(it));
+    });
   }
 
   /** 방이 있는 영역만 잘라 정수배로 최대한 크게 */
@@ -189,7 +238,7 @@ export class SketchMap {
     const markers = mapMarkers(src.mapInput());
     const blink = Math.floor(this.scene.time.now / 300) % 2 === 0;
     let li = 0;
-    const label = (m: MapMarker, x: number, y: number, color: string, below = false) => {
+    const label = (m: MapMarker, x: number, y: number, color: string, below = false, above = false) => {
       let t = this.labels[li];
       if (!t) {
         t = this.scene.add.text(0, 0, '', textStyle('tiny', color, { stroke: MAP.colors.paper, strokeThickness: 3 }));
@@ -197,7 +246,9 @@ export class SketchMap {
         this.labelLayer.add(t);
       }
       // 현재 위치 이름은 아래쪽에 두어 같은 자리의 다른 표식(포탈 등) 이름을 가리지 않는다
-      if (below) t.setText(m.label).setColor(color).setPosition(Math.round(x - t.width / 2), Math.round(y + 7)).setVisible(true);
+      // 상점 이름은 위쪽: 시작 지점 근처에 있을 때 현재 위치 이름과 겹치지 않게
+      if (above) t.setText(m.label).setColor(color).setPosition(Math.round(x - t.width / 2), Math.round(y - 17)).setVisible(true);
+      else if (below) t.setText(m.label).setColor(color).setPosition(Math.round(x - t.width / 2), Math.round(y + 7)).setVisible(true);
       else t.setText(m.label).setColor(color).setPosition(Math.round(x + 6), Math.round(y - 5)).setVisible(true);
       li++;
     };
@@ -232,6 +283,11 @@ export class SketchMap {
         case 'altar':
           g.fillStyle(c.altar, a).fillTriangle(x, y - 4, x + 4, y + 3, x - 4, y + 3);
           label(m, x, y, hex(c.altar));
+          break;
+        case 'shop':
+          g.fillStyle(c.shop, 1).fillRect(x - 4, y - 4, 8, 8);
+          g.lineStyle(1, 0xffffff, 1).strokeRect(x - 4, y - 4, 8, 8);
+          label(m, x, y, hex(c.shop), false, true);
           break;
         case 'player':
           // 고리 모양: 같은 자리의 포탈 표식이 가려지지 않게

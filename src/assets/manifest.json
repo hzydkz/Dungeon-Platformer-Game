@@ -1000,6 +1000,24 @@
       "frameCount": 1,
       "color": "#50e070",
       "animations": {}
+    },
+    {
+      "key": "shopkeeper",
+      "file": "sprites/shopkeeper.png",
+      "frameWidth": 16,
+      "frameHeight": 24,
+      "frameCount": 2,
+      "color": "#e0b050",
+      "animations": {
+        "idle": {
+          "frames": [
+            0,
+            1
+          ],
+          "fps": 2,
+          "repeat": -1
+        }
+      }
     }
   ],
   "tilesets": [

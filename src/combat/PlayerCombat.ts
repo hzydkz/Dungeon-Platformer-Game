@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { AssetKey } from '../assets/keys';
 import { COMBAT } from '../config/combat';
+import { MAP } from '../config/map';
 import { incomingDamage, invulnTime, regenAmount, thornsDamage } from '../core/combat/damage';
 import type { Stats } from '../core/combat/stats';
 import type { MeleeAttack, RoleDef } from '../data/roles';
@@ -90,7 +91,9 @@ export class PlayerCombat {
     this.updateSwing();
 
     const blockFactor = this.blocking && this.role.skill.kind === 'block' ? this.role.skill.moveFactor : 1;
-    this.player.motor.speedMultiplier = stats.moveSpeed * blockFactor;
+    // 지도를 펼치고 있는 동안에는 느리게 움직인다
+    const mapFactor = input.mapHeld ? MAP.holdMoveFactor : 1;
+    this.player.motor.speedMultiplier = stats.moveSpeed * blockFactor * mapFactor;
 
     // 무적 깜빡임
     const blink = this.invulnerable && !this.godMode && Math.floor(this.now / COMBAT.player.blinkInterval) % 2 === 0;

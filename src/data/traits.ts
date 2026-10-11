@@ -30,7 +30,7 @@ export const TRAITS: readonly TraitDef[] = [
     ],
   },
   { id: 'vampire', name: '흡혈', description: '적 처치 시 최대 체력의 4% 회복', modifiers: [{ stat: 'healOnKill', op: 'add', value: 0.04 }] },
-  { id: 'lucky', name: '행운아', description: '상자 보상 등급 상승 확률 +35%p', modifiers: [{ stat: 'chestTierBonus', op: 'add', value: 0.35 }] },
+  { id: 'lucky', name: '행운아', description: '아이템이 높은 등급으로 잘 나온다 (등급 행운 +0.1)', modifiers: [{ stat: 'itemLuck', op: 'add', value: 0.1 }] },
   { id: 'tenacity', name: '끈기', description: '체력 25% 이하일 때 공격력 +25%', modifiers: [{ stat: 'lowHpAttackBonus', op: 'add', value: 0.25 }] },
   {
     id: 'berserker',
