@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MAP } from '../src/config/map';
 import { generateFloor } from '../src/core/generation/floor';
 import { Exploration } from '../src/core/map/exploration';
-import { mapMarkers, type MarkerInput } from '../src/core/map/markers';
+import { mapMarkers, type MarkerInput, type MarkerOptions } from '../src/core/map/markers';
 
 function setup(seed = 3) {
   const floor = generateFloor({ runSeed: seed, floor: 2, kind: 'floor' });
@@ -20,7 +20,7 @@ function setup(seed = 3) {
   return { floor, exploration, input };
 }
 
-const kinds = (input: MarkerInput, opt = MAP) => mapMarkers(input, opt).map((m) => m.kind);
+const kinds = (input: MarkerInput, opt: MarkerOptions = MAP) => mapMarkers(input, opt).map((m) => m.kind);
 
 describe('약도 표식', () => {
   it('처음에는 보스, 입구, 현재 위치만 보인다 (출구/빨간 포탈은 발견 전 숨김)', () => {

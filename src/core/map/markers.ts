@@ -33,7 +33,14 @@ export interface MarkerInput {
   readonly bossDefeated: boolean;
 }
 
-export function mapMarkers(input: MarkerInput, options = MAP): MapMarker[] {
+/** 지도 표시 옵션 (기본값은 config/map.ts) */
+export interface MarkerOptions {
+  readonly showPortalsAfterDiscovery: boolean;
+  readonly showUndiscoveredPortals: boolean;
+  readonly showBossFromStart: boolean;
+}
+
+export function mapMarkers(input: MarkerInput, options: MarkerOptions = MAP): MapMarker[] {
   const out: MapMarker[] = [];
   const f = input.floor;
   const ex = input.exploration;
