@@ -15,7 +15,7 @@ export interface SketchSource {
   readonly exploration: Exploration;
   readonly label: string;
   /** 구역 (공개된 방을 색으로 표시) */
-  readonly zones: readonly { readonly kind: 'nest' | 'dark' | 'trap'; readonly rooms: readonly number[] }[];
+  readonly zones: readonly { readonly kind: 'nest' | 'trap'; readonly rooms: readonly number[] }[];
   /** 가진 아이템, 레벨, 골드 (지도 아래쪽/제목 줄에 표시) */
   readonly status: { readonly items: readonly ItemInstance[]; readonly level: number; readonly gold: number };
   mapInput(): MarkerInput;
@@ -265,7 +265,7 @@ export class SketchMap {
     };
     const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
     // 구역: 바닥 색은 지형 그림에서, 여기서는 본 적 있는 첫 방에 이름
-    const ZONE_LABEL = { nest: '둥지', dark: '어둠', trap: '함정' } as const;
+    const ZONE_LABEL = { nest: '둥지', trap: '함정' } as const;
     for (const z of src.zones) {
       const col = c.zone[z.kind];
       let named = false;

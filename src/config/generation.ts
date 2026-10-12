@@ -116,7 +116,7 @@ export const ROOM_RANDOM = {
 /**
  * 탐사 요소 (기획자 요청: 다시 돌아갈 이유와 발견하는 재미). 일반 층에만 (빨간 던전 제외). [가정]
  */
-export type ZoneKind = 'nest' | 'dark' | 'trap';
+export type ZoneKind = 'nest' | 'trap';
 export const EXPLORE = {
   /** 지름길 문 개수: 층 번호별 (1층부터) */
   shortcuts: [1, 1, 1, 2, 2, 2, 2, 2, 2] as readonly number[],

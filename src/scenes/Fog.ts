@@ -9,7 +9,7 @@ const TEX_KEY = 'fx_fog';
 
 /**
  * 시야 안개 (기획자 요청). 타일 하나를 한 픽셀로 하는 캔버스를 타일 크기만큼 늘려(선형 보간) 층 전체를 덮는다.
- * 지금 보이는 칸은 투명, 본 적 있는 칸은 반쯤 어둡게, 못 본 칸은 검게. 보이는 칸은 exploration에 본 것으로 기록한다.
+ * 지금 보이는 칸은 투명, 벽에 가린 칸은 어둡게(본 적 있는 칸은 VISION.memoryAlpha). 보이는 칸은 exploration에 본 것으로 기록한다.
  */
 export class Fog {
   private readonly image: Phaser.GameObjects.Image;
@@ -79,15 +79,12 @@ export class Fog {
       px[i * 4 + 3] = memory;
     }
     this.visibleList.length = 0;
-    const fadeFrom = Math.max(0, radius - VISION.fadeTiles);
-    computeVisible(this.grid, eyeX, eyeY, radius, (i, dist) => {
-      const a = dist <= fadeFrom ? 0 : Math.round((memory * (dist - fadeFrom)) / Math.max(1, radius - fadeFrom));
-      if (!this.visible[i]) {
-        this.visible[i] = 1;
-        this.visibleList.push(i);
-        this.exploration.markSeen(i);
-        px[i * 4 + 3] = a;
-      } else px[i * 4 + 3] = Math.min(px[i * 4 + 3]!, a);
+    computeVisible(this.grid, eyeX, eyeY, radius, (i) => {
+      if (this.visible[i]) return;
+      this.visible[i] = 1;
+      this.visibleList.push(i);
+      this.exploration.markSeen(i);
+      px[i * 4 + 3] = 0;
     });
     this.tex.getContext().putImageData(this.data, 0, 0);
     this.tex.refresh();

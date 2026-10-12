@@ -180,7 +180,7 @@ function planExploration(rng: Rng, layout: Layout, floor: number): ExplorePlan {
   // 구역: 이어진 일반 방 몇 개
   const zones: Zone[] = [];
   const used = new Set([vault, hidden]);
-  const kinds = rng.shuffle<ZoneKind>(['nest', 'dark', 'trap']);
+  const kinds = rng.shuffle<ZoneKind>(['nest', 'trap']);
   const zoneCount = EXPLORE.zones[Math.min(EXPLORE.zones.length, floor) - 1] ?? 0;
   const eligible = (r: number) => !special.has(r) && !L.rooms[r]!.arena && !used.has(r);
   for (let z = 0; z < zoneCount; z++) {

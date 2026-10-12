@@ -80,7 +80,7 @@ src/core/     Phaser 비의존 순수 로직 + 테스트 대상
 src/data/     역할군 4, 특성 10, 성격 8, 몬스터 9, 보스 4, 아이템 12
 src/rooms/    방 템플릿 ASCII: 손으로 쓴 것(*.txt, 1×1 44개 + 아레나 3) + 자동 생성(gen/*.txt, 138개: scripts/gen-rooms.mjs)
 src/scenes/   Boot, Preload, Title, CharacterSelect, Floor(층과 빨간 던전 공용), Hud, Item(보스 보상/제단/상점/아이템 교체), GameOver/Victory,
-              ExploreFeatures(지름길 레버, 열쇠/잠긴 문, 숨은 방 알림, 구역 알림/어둠 덮개), Fog(시야 안개)
+              ExploreFeatures(지름길 레버, 열쇠/잠긴 문, 숨은 방 알림, 구역 알림), Fog(시야 안개)
 src/entities/ Player, Monster, Boss, Portal, Projectile, Chest
 src/combat/PlayerCombat.ts, src/fx/(Effects, Scenery), src/input/Controls.ts, src/ui/(SketchMap, text)
 src/assets/manifest.json  에셋 키 → public/assets/ 파일. 없으면 플레이스홀더 자동 생성 (docs/ASSETS.md)
@@ -94,7 +94,7 @@ src/assets/manifest.json  에셋 키 → public/assets/ 파일. 없으면 플레
 - **자동 생성 방** (`core/generation/roomgen.ts`, `node scripts/gen-rooms.mjs`): 굴을 파고 도달성 시뮬레이터로 막힌 곳에 넝쿨(`|`)을 늘어뜨린다(실패하면 단방향 발판 사다리). 수평 틈은 바위 턱. 물리값/몸 크기/가시 판정/출입구 규격을 바꾸면 **생성기를 다시 돌리고** `npm test`로 확인할 것. 생성 결과 파일은 직접 고치지 않는다.
 - **방 경계 트기 + 층 전체 검증**: 좌우로 이어진 방 사이 벽을 양쪽이 빈 높이에서 허문다(`widenSeams`). 이건 방 단위 보장 밖이라 `generateFloor`가 층 전체를 시뮬레이션(`floorReachErrors`, 이 컨테이너에서 층당 약 0.3초)하고, 실패하면 트지 않은 층을 쓴다. 대량 생성 테스트는 `reachCheck: false`로 끈다(안 끄면 테스트가 2분 넘게 걸린다).
 - **탐사 요소** (`planExploration`): 지름길(gate)은 레이아웃에 연결을 더하므로 템플릿 배정 전에 정한다. 잠긴 문/지름길 문은 `Tile.Lock`/`Tile.Gate`(막힌 타일), 숨은 방 입구는 `Tile.Breakable`. 층 전체 검증은 문이 닫힌 상태에서 열쇠·레버·출구 등에 갈 수 있는지 본다. 잠긴 방 안 상자는 `locked`, 숨은 방 상자는 `secret`.
-- **넝쿨** (`Tile.Vine`, 충돌 없음): `Player.tryVine/tickVine`, 도달성 검증기는 `addVineEdges`(넝쿨 아무 칸에서 붙잡아 위아래 아무 칸으로 내림). 생성기 무한 루프를 한 번 냈다(같은 열 sx == tx). 생성기를 고치면 시간 제한을 두고 돌릴 것.
+- **넝쿨** (`Tile.Vine`, 충돌 없음): `Player.tryVine/tickVine`, 몸 위치를 직접 옮기지 말고 속도로(직접 옮기면 충돌을 건너뛰어 벽에 끼었다). 뛰어내린 넝쿨은 잠시 다시 붙잡지 않는다(`vineLeft`). 도달성 검증기는 `addVineEdges`(넝쿨 아무 칸에서 붙잡아 위아래 아무 칸으로 내림). 생성기 무한 루프를 한 번 냈다(같은 열 sx == tx). 생성기를 고치면 시간 제한을 두고 돌릴 것.
 - **시야와 지도** (`core/map/vision.ts`, `scenes/Fog.ts`): 막힌 타일(`isSolidTile`)이 시야를 가린다. 안개는 타일 1개 = 1픽셀 캔버스를 16배로 늘린(선형 보간) 이미지(depth 35). 보이는 칸은 `Exploration.markSeen`으로 기록하고, 지도(SketchMap)와 표식(markers)은 `isSeen`만 본다. 몬스터 표시/포탈 발견도 시야 기준. 지도 전체 공개 디버그는 `fog.invalidate()`도 부른다.
 - **블록 주석 안에 `**/` 금지**: 글롭 경로를 주석에 쓰다가 주석이 닫혀 빌드가 깨진 적이 있다.
 - **발판 높이 계산 실수 주의**: "3타일 오르기" = 서 있는 바닥 윗면끼리 3칸 차이. 템플릿 작성 중 여러 번 4칸으로 잘못 셌다. 템플릿을 고치면 `npm test`가 도달 불가 위치를 알려 준다.
@@ -111,7 +111,7 @@ src/assets/manifest.json  에셋 키 → public/assets/ 파일. 없으면 플레
 ## 6. 기획자에게 확인 중인 것
 
 - 약도에서 포탈을 처음부터 보일지(현재: 화면에 한 번 보인 뒤 표시, `config/map.ts`의 `showUndiscoveredPortals`) — QUESTIONS 28번.
-- 자동 생성 방의 오르기 수단은 넝쿨로 바꿨다(QUESTIONS 46). 2×2 방에는 아직 단방향 발판이 좀 남아 있다(넝쿨 실패 시 사다리, 발사대). 시야 반지름(9칸)과 안개 어둡기는 QUESTIONS 47, `VISION`.
+- 자동 생성 방의 오르기 수단은 넝쿨로 바꿨다(QUESTIONS 46). 2×2 방에는 아직 단방향 발판이 좀 남아 있다(넝쿨 실패 시 사다리, 발사대). 시야는 화면 안 전부(벽에 가린 곳만 검게), QUESTIONS 47, `VISION`. 넝쿨 버그 수정은 QUESTIONS 48(실기기 재현 여부 확인 필요).
 - 밸런스(역할군/몬스터/보스/아이템/레벨/골드 수치)는 실제 플레이로 조정한 적이 없다. 레벨 곡선만 몬스터 수 시뮬레이션으로 맞췄다(9층 진입 Lv 12 전후).
 - 방 사이 벽(2타일)과 출입구(4타일)를 더 크게 터서 진짜 한 덩어리 지형으로 만드는 안은 제안만 했다. 하려면 층 전체 단위 도달성 검증을 다시 설계해야 한다.
 - 에셋은 전부 플레이스홀더. 기획자가 픽셀아트로 교체 예정(규격은 docs/ASSETS.md).

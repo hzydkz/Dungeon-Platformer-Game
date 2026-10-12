@@ -1,7 +1,6 @@
 import Phaser from 'phaser';
 import { AssetKey } from '../assets/keys';
-import { DISPLAY, VIEW } from '../config/display';
-import { EXPLORE_FX } from '../config/map';
+import { DISPLAY } from '../config/display';
 import type { GeneratedFloor, SpecialDoor, TilePos } from '../core/generation/floor';
 import { Tile } from '../core/tiles';
 import { textStyle } from '../ui/text';
@@ -18,11 +17,11 @@ export interface ExploreHost {
   sound(key: string, volume: number): void;
 }
 
-const ZONE_NAME = { nest: '몬스터 둥지', dark: '어둠 구역', trap: '함정 구역' } as const;
-const ZONE_HINT = { nest: '몬스터가 많지만 상자도 많다', dark: '앞이 잘 보이지 않는다', trap: '가시 함정이 많지만 상자도 많다' } as const;
+const ZONE_NAME = { nest: '몬스터 둥지', trap: '함정 구역' } as const;
+const ZONE_HINT = { nest: '몬스터가 많지만 상자도 많다', trap: '가시 함정이 많지만 상자도 많다' } as const;
 
 /**
- * 탐사 요소 (기획자 요청): 지름길 문(레버), 열쇠와 잠긴 문, 숨은 방 발견 알림, 구역 알림과 어둠 시야.
+ * 탐사 요소 (기획자 요청): 지름길 문(레버), 열쇠와 잠긴 문, 숨은 방 발견 알림, 구역 알림.
  * 층 씬이 만들고 매 프레임 update를 부른다.
  */
 export class ExploreFeatures {
@@ -34,8 +33,6 @@ export class ExploreFeatures {
   private readonly levers = new Map<number, Phaser.GameObjects.Sprite>();
   private keySprite: Phaser.GameObjects.Sprite | null = null;
   private readonly zoneNoticed = new Set<number>();
-  private darkness: Phaser.GameObjects.Image | null = null;
-  private darkAlpha = 0;
   private lockHintAt = 0;
   private gateHintAt = 0;
 
@@ -58,27 +55,6 @@ export class ExploreFeatures {
       this.keySprite = scene.add.sprite(f.key.x * s + s / 2, (f.key.y + 1) * s - 10, AssetKey.key, 0).setDepth(7);
       scene.tweens.add({ targets: this.keySprite, y: this.keySprite.y - 4, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     }
-    if (f.zones.some((z) => z.kind === 'dark')) this.darkness = this.makeDarkness();
-  }
-
-  /** 어둠 구역: 플레이어 주변만 보이는 화면 덮개 (화면보다 두 배 크게 만들어 움직여도 덮인다) */
-  private makeDarkness(): Phaser.GameObjects.Image {
-    const key = 'fx_darkness';
-    const w = VIEW.maxWidth * 2;
-    const h = VIEW.maxHeight * 2;
-    if (!this.scene.textures.exists(key)) {
-      const tex = this.scene.textures.createCanvas(key, w, h);
-      if (tex) {
-        const ctx = tex.getContext();
-        const g = ctx.createRadialGradient(w / 2, h / 2, EXPLORE_FX.darkInnerRadius, w / 2, h / 2, EXPLORE_FX.darkOuterRadius);
-        g.addColorStop(0, 'rgba(0,0,0,0)');
-        g.addColorStop(1, `rgba(0,0,0,${EXPLORE_FX.darkAlpha})`);
-        ctx.fillStyle = g;
-        ctx.fillRect(0, 0, w, h);
-        tex.refresh();
-      }
-    }
-    return this.scene.add.image(0, 0, key).setScrollFactor(0).setDepth(45).setAlpha(0);
   }
 
   private door(link: number): SpecialDoor | undefined {
@@ -154,7 +130,7 @@ export class ExploreFeatures {
     this.host.notifyText(`${ZONE_NAME[kind]}: ${ZONE_HINT[kind]}`, 3, '#ffc080');
   }
 
-  update(dt: number, cam: Phaser.Cameras.Scene2D.Camera): void {
+  update(): void {
     const p = this.host.player;
     const s = DISPLAY.tileSize;
     // 열쇠 줍기
@@ -179,13 +155,6 @@ export class ExploreFeatures {
         this.lockHintAt = this.scene.time.now + 3000;
         this.host.notifyText('잠긴 문: 이 층 어딘가의 열쇠가 필요하다', 2.5, '#ffd860');
       }
-    }
-    // 어둠 구역 시야
-    if (this.darkness) {
-      const inDark = this.host.floorData.zones.some((z) => z.kind === 'dark' && z.rooms.includes(this.host.currentRoom));
-      const target = inDark ? 1 : 0;
-      this.darkAlpha += (target - this.darkAlpha) * Math.min(1, dt * 3);
-      this.darkness.setAlpha(this.darkAlpha).setPosition(p.x - cam.scrollX, p.y - 8 - cam.scrollY);
     }
   }
 }

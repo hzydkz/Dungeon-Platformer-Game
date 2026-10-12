@@ -1029,11 +1029,9 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     };
   }
 
-  /** 시야 반지름 (타일): 보스전은 아레나 전체, 어둠 구역은 좁게 */
+  /** 시야 반지름 (타일): 화면 밖까지, 보스전은 아레나 전체 */
   protected visionRadius(): number {
-    if (this.bossState === 'fighting') return VISION.bossRadius;
-    const dark = this.floorData.zones.some((z) => z.kind === 'dark' && z.rooms.includes(this.currentRoom));
-    return dark ? VISION.darkRadius : VISION.radius;
+    return this.bossState === 'fighting' ? VISION.bossRadius : VISION.radius;
   }
 
   /** 시야 계산, 안개 갱신, 안 보이는 몬스터 숨기기 (기획자 요청) */
@@ -1148,7 +1146,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     for (const p of this.enemyShots.getChildren() as Projectile[]) p.tick(dt);
     if (this.boss && this.bossState === 'fighting') this.boss.tick(dt, this);
     this.updateEscapeTimer(dt);
-    this.explore.update(dt, this.cameras.main);
+    this.explore.update();
     this.updateSecretHint(dt);
     this.updateRoom();
     this.updateVision(dt);
