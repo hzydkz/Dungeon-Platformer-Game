@@ -1018,6 +1018,63 @@
           "repeat": -1
         }
       }
+    },
+    {
+      "key": "lever",
+      "file": "sprites/lever.png",
+      "frameWidth": 8,
+      "frameHeight": 16,
+      "frameCount": 2,
+      "color": "#8ad0a0",
+      "animations": {
+        "idle": {
+          "frames": [
+            0
+          ],
+          "fps": 1,
+          "repeat": 0
+        },
+        "pulled": {
+          "frames": [
+            1
+          ],
+          "fps": 1,
+          "repeat": 0
+        }
+      }
+    },
+    {
+      "key": "key_item",
+      "file": "sprites/key.png",
+      "frameWidth": 12,
+      "frameHeight": 12,
+      "frameCount": 1,
+      "color": "#ffd040",
+      "animations": {}
+    },
+    {
+      "key": "treasure_chest",
+      "file": "sprites/treasure_chest.png",
+      "frameWidth": 24,
+      "frameHeight": 20,
+      "frameCount": 2,
+      "color": "#e0b030",
+      "animations": {
+        "idle": {
+          "frames": [
+            0
+          ],
+          "fps": 1,
+          "repeat": 0
+        },
+        "open": {
+          "frames": [
+            1
+          ],
+          "fps": 1,
+          "repeat": 0
+        }
+      }
     }
   ],
   "tilesets": [
@@ -1030,7 +1087,9 @@
         "oneway": "#6b5b86",
         "spike": "#c8c8d0",
         "breakable": "#3b3346",
-        "seal": "#aa2244"
+        "seal": "#aa2244",
+        "gate": "#4a8a6a",
+        "lock": "#c8a040"
       }
     },
     {
@@ -1042,7 +1101,9 @@
         "oneway": "#8a7a5a",
         "spike": "#c8c8d0",
         "breakable": "#4a4238",
-        "seal": "#aa2244"
+        "seal": "#aa2244",
+        "gate": "#4a8a6a",
+        "lock": "#c8a040"
       }
     },
     {
@@ -1054,7 +1115,9 @@
         "oneway": "#3a3470",
         "spike": "#c8c8d0",
         "breakable": "#1d1b33",
-        "seal": "#aa2244"
+        "seal": "#aa2244",
+        "gate": "#4a8a6a",
+        "lock": "#c8a040"
       }
     }
   ],

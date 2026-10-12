@@ -16,7 +16,7 @@ export const ITEMS = {
    * 행운이 커도 가중치가 F→S로 줄어드는 모양(피라미드)은 유지되도록 작은 값을 쓴다 (테스트로 검사).
    */
   luckPerFloor: 0.02,
-  luckBySource: { shop: 0, floorBoss: 0.08, redBoss: 0.2, altar: 0.12 },
+  luckBySource: { shop: 0, floorBoss: 0.08, redBoss: 0.2, altar: 0.12, vault: 0.15 },
   /** 행운 상한: 이 값 이하에서는 F→S 가중치가 항상 줄어든다 (0.75 × 1.3 < 1) */
   maxLuck: 0.3,
   /** 보스 처치 아이템 선택지 수 */
@@ -41,6 +41,8 @@ export const ECONOMY = {
   monsterGold: [1, 3] as readonly [number, number],
   /** 보스 처치 골드 (빨간 던전은 × redBossGoldMultiplier) */
   bossGold: 40,
+  /** 잠긴 방 보물 상자 골드 (× 층 골드 배율) */
+  vaultGold: 40,
   redBossGoldMultiplier: 1.5,
   /** 상자: healChance 확률로 회복, 나머지는 골드 */
   chest: {

@@ -2,7 +2,7 @@
  * 층 생성: 레이아웃 + 템플릿 선택 + 출입구 자리 배정 + 방 경계 트기 + 내부 랜덤 요소 + 특수 위치 (기획서 5장). Phaser 비의존.
  * 층 검증에 실패하면 시드를 변형해 재생성한다 (5.4).
  */
-import { DOOR, FLOOR_GRID, LAYOUT, RED_LAYOUT, ROOM, ROOM_RANDOM, type DoorSlot, type SideSlot, type VerticalSlot } from '../../config/generation';
+import { DOOR, EXPLORE, FLOOR_GRID, LAYOUT, RED_LAYOUT, ROOM, ROOM_RANDOM, type DoorSlot, type SideSlot, type VerticalSlot, type ZoneKind } from '../../config/generation';
 import { PROGRESSION } from '../../config/progression';
 import { Rng, deriveSeed } from '../rng';
 import { floorSeed, redDungeonSeed } from '../seed';
@@ -10,7 +10,7 @@ import { Tile, createGrid, getTile, isOneWayTile, isSolidTile, setTile, type Til
 import { generateLayout, roomDistances, roomEdges, type Layout, type LayoutParams, type Link } from './layout';
 import { REACH_PARAMS } from './params';
 import { buildReachGraph, canReach, reachableFrom } from './reach';
-import { DIR_DELTA, isSideDir, resolveTemplate, templateHas, type DoorCap, type Marker, type RoomTemplate } from './template';
+import { DIR_DELTA, OPPOSITE, isSideDir, resolveTemplate, templateHas, type DoorCap, type Marker, type RoomTemplate } from './template';
 import { loadLibrary, shapeKey, type TemplateLibrary } from './templateLibrary';
 
 export type FloorKind = 'floor' | 'red';
@@ -57,7 +57,26 @@ export interface SpawnPoint extends TilePos {
 }
 
 export interface ChestSpawn extends SpawnPoint {
+  /** 비밀 상자/숨은 방 상자: 열기 전에는 지도에 표시하지 않는다 */
   readonly secret: boolean;
+  /** 잠긴 방 안: 열쇠로 문을 열어야 갈 수 있다 */
+  readonly locked?: boolean;
+}
+
+/** 특별한 출입구: 지름길 문(gate), 잠긴 문(lock), 부서지는 벽으로 숨긴 입구(secret) */
+export interface SpecialDoor {
+  readonly link: number;
+  readonly kind: 'gate' | 'lock' | 'secret';
+  /** 양쪽 출입구 타일 */
+  readonly tiles: readonly TilePos[];
+  /** 지름길 문을 열 수 있는 쪽 방과 그 쪽 레버 위치 */
+  readonly openRoom?: number;
+  readonly lever?: TilePos;
+}
+
+export interface Zone {
+  readonly kind: ZoneKind;
+  readonly rooms: readonly number[];
 }
 
 export interface GeneratedFloor {
@@ -91,6 +110,96 @@ export interface GeneratedFloor {
   readonly altar: SpawnPoint | null;
   /** 상점 주인 위치 (일반 층마다 1곳, 빨간 던전에는 없음). 상점 방에는 몬스터가 없다 */
   readonly shop: SpawnPoint | null;
+  readonly specialDoors: readonly SpecialDoor[];
+  /** 잠긴 방 열쇠 */
+  readonly key: SpawnPoint | null;
+  /** 잠긴 보물 방과 보물 상자 위치 */
+  readonly vault: { readonly room: number; readonly chest: TilePos } | null;
+  /** 숨은 방 (-1: 없음) */
+  readonly hiddenRoom: number;
+  readonly zones: readonly Zone[];
+}
+
+/** 탐사 요소 계획 (레이아웃에 지름길 연결을 더하고 연결 종류를 바꾼다) */
+interface ExplorePlan {
+  readonly vault: number;
+  readonly hidden: number;
+  /** 지름길 연결 → 열 수 있는 쪽 방 */
+  readonly gates: ReadonlyMap<number, number>;
+  readonly zones: readonly Zone[];
+}
+
+const NO_PLAN: ExplorePlan = { vault: -1, hidden: -1, gates: new Map(), zones: [] };
+
+function planExploration(rng: Rng, layout: Layout, floor: number): ExplorePlan {
+  const L = layout;
+  const special = new Set([L.entrance, L.exit, L.red, L.boss, L.bossGate]);
+  const linkCount = (r: number) => L.links.filter((l) => l.a === r || l.b === r).length;
+  const normal = L.rooms.filter((r) => !r.arena && !special.has(r.index));
+  // 막다른 방: 잠긴 방, 숨은 방 후보 (입구에서 2칸 이상)
+  const deadEnds = normal.filter((r) => linkCount(r.index) === 1 && (L.dist[r.index] ?? 0) >= 2).map((r) => r.index);
+  let vault = -1;
+  let hidden = -1;
+  if (deadEnds.length && rng.chance(EXPLORE.vaultChance)) {
+    vault = rng.pick(deadEnds);
+    L.links.find((l) => l.a === vault || l.b === vault)!.kind = 'lock';
+  }
+  const hiddenPool = deadEnds.filter((r) => r !== vault);
+  if (hiddenPool.length && rng.chance(EXPLORE.hiddenRoomChance)) {
+    hidden = rng.pick(hiddenPool);
+    L.links.find((l) => l.a === hidden || l.b === hidden)!.kind = 'secret';
+  }
+  // 지름길: 좌우로 맞닿았지만 이어지지 않은 두 방 (입구 거리 차이가 큰 쌍), 깊은 쪽에서 연다
+  const gates = new Map<number, number>();
+  const excluded = new Set([vault, hidden, L.boss]);
+  const linked = (a: number, b: number) => L.links.some((l) => (l.a === a && l.b === b) || (l.a === b && l.b === a));
+  const cands: { a: number; b: number; ax: number; ay: number; dir: 'right'; gap: number }[] = [];
+  const seen = new Set<string>();
+  for (const room of L.rooms) {
+    if (room.arena || excluded.has(room.index)) continue;
+    for (const [cx, cy] of room.cells) {
+      if (cx + 1 >= L.gridW) continue;
+      const other = L.cellRoom[cy * L.gridW + cx + 1] as number;
+      if (other < 0 || other === room.index || excluded.has(other) || L.rooms[other]!.arena || linked(room.index, other)) continue;
+      const gap = Math.abs((L.dist[room.index] ?? 0) - (L.dist[other] ?? 0));
+      const key = `${room.index}-${other}`;
+      if (gap < EXPLORE.shortcutMinGap || seen.has(key)) continue;
+      seen.add(key);
+      cands.push({ a: room.index, b: other, ax: cx, ay: cy, dir: 'right', gap });
+    }
+  }
+  const want = EXPLORE.shortcuts[Math.min(EXPLORE.shortcuts.length, floor) - 1] ?? 0;
+  // 거리 차이가 큰(많이 돌아가야 하는) 쌍부터
+  for (const c of rng.shuffle(cands).sort((p, q) => q.gap - p.gap)) {
+    if (gates.size >= want) break;
+    if (linked(c.a, c.b)) continue;
+    const idx = L.links.length;
+    L.links.push({ a: c.a, b: c.b, dir: c.dir, ax: c.ax, ay: c.ay, kind: 'gate' });
+    gates.set(idx, (L.dist[c.a] ?? 0) > (L.dist[c.b] ?? 0) ? c.a : c.b);
+  }
+  // 구역: 이어진 일반 방 몇 개
+  const zones: Zone[] = [];
+  const used = new Set([vault, hidden]);
+  const kinds = rng.shuffle<ZoneKind>(['nest', 'dark', 'trap']);
+  const zoneCount = EXPLORE.zones[Math.min(EXPLORE.zones.length, floor) - 1] ?? 0;
+  const eligible = (r: number) => !special.has(r) && !L.rooms[r]!.arena && !used.has(r);
+  for (let z = 0; z < zoneCount; z++) {
+    const seeds = normal.map((r) => r.index).filter((r) => eligible(r) && (L.dist[r] ?? 0) >= 2);
+    if (!seeds.length) break;
+    const size = rng.int(EXPLORE.zoneSize[0], EXPLORE.zoneSize[1]);
+    const rooms = [rng.pick(seeds)];
+    used.add(rooms[0]!);
+    for (let i = 0; i < rooms.length && rooms.length < size; i++) {
+      for (const l of rng.shuffle(L.links.filter((l) => l.kind === 'open' && (l.a === rooms[i] || l.b === rooms[i])))) {
+        const n = l.a === rooms[i] ? l.b : l.a;
+        if (rooms.length >= size || !eligible(n)) continue;
+        rooms.push(n);
+        used.add(n);
+      }
+    }
+    zones.push({ kind: kinds[z % kinds.length]!, rooms });
+  }
+  return { vault, hidden, gates, zones };
 }
 
 export function layoutParamsFor(opts: FloorGenOptions, rng: Rng): LayoutParams {
@@ -229,7 +338,7 @@ function widenSeams(grid: TileGrid, layout: Layout, rng: Rng): number {
 
 type Assembled = Omit<GeneratedFloor, 'seed' | 'usedSeed' | 'attempts'>;
 
-function assemble(opts: FloorGenOptions, lib: TemplateLibrary, rng: Rng, layout: Layout, widen: boolean): Assembled | null {
+function assemble(opts: FloorGenOptions, lib: TemplateLibrary, rng: Rng, layout: Layout, widen: boolean, plan: ExplorePlan): Assembled | null {
   const RW = ROOM.widthTiles;
   const RH = ROOM.heightTiles;
   const grid = createGrid(layout.gridW * RW, layout.gridH * RH, Tile.Wall);
@@ -250,6 +359,7 @@ function assemble(opts: FloorGenOptions, lib: TemplateLibrary, rng: Rng, layout:
   const trapChance = ROOM_RANDOM.trapRoomChance + (opts.trapChanceBonus ?? 0);
   const chestMult = opts.chestChanceMultiplier ?? 1;
   const mChance = monsterChance(opts.floor);
+  const zoneOf = (r: number) => plan.zones.find((z) => z.rooms.includes(r))?.kind ?? null;
   const linkCount = layout.rooms.map((r) => roomEdges(layout, r.index).length);
 
   const rooms: PlacedRoom[] = [];
@@ -264,7 +374,10 @@ function assemble(opts: FloorGenOptions, lib: TemplateLibrary, rng: Rng, layout:
     const ox = r.x * RW;
     const oy = r.y * RH;
     const role = roleOf(r.index);
-    const trap = role === 'normal' && templateHas(t, 't') && rng.chance(trapChance);
+    const zone = zoneOf(r.index);
+    const trap = role === 'normal' && templateHas(t, 't') && rng.chance(zone === 'trap' ? EXPLORE.trap.trapChance : trapChance);
+    const hiddenRoom = r.index === plan.hidden;
+    const vaultRoom = r.index === plan.vault;
     const open: DoorCap[] = roomEdges(layout, r.index).map((e) => ({ dir: e.dir, seg: e.seg, slot: slots[e.link]! }));
     const { grid: tg, markers } = resolveTemplate(t, {
       open,
@@ -284,13 +397,18 @@ function assemble(opts: FloorGenOptions, lib: TemplateLibrary, rng: Rng, layout:
     const deadEnd = !r.arena && linkCount[r.index] === 1;
     rooms.push({ index: r.index, role, templateId: t.id, x: ox, y: oy, w: t.width, h: t.height, deadEnd, trap });
 
+    const roomMonster = Math.min(0.95, mChance * (zone === 'nest' ? EXPLORE.nest.monsterMultiplier : 1));
+    const zoneChest = zone === 'nest' ? EXPLORE.nest.chestMultiplier : zone === 'trap' ? EXPLORE.trap.chestMultiplier : 1;
     for (const m of world) {
-      if (m.kind === 'monster' && role !== 'entrance' && !r.arena && rng.chance(mChance)) monsters.push({ x: m.x, y: m.y, room: r.index });
-      if (m.kind === 'chest') {
-        const p = ROOM_RANDOM.chestChance * (deadEnd ? ROOM_RANDOM.deadEndChestMultiplier : 1) * chestMult;
-        if (rng.chance(p)) chests.push({ x: m.x, y: m.y, room: r.index, secret: false });
+      // 잠긴 방과 숨은 방은 보상 방: 몬스터 없음
+      if (m.kind === 'monster' && role !== 'entrance' && !r.arena && !hiddenRoom && !vaultRoom && rng.chance(roomMonster)) {
+        monsters.push({ x: m.x, y: m.y, room: r.index });
       }
-      if (m.kind === 'secretChest' && secretRooms.has(r.index)) chests.push({ x: m.x, y: m.y, room: r.index, secret: true });
+      if (m.kind === 'chest') {
+        const p = hiddenRoom ? EXPLORE.hiddenChestChance : ROOM_RANDOM.chestChance * (deadEnd ? ROOM_RANDOM.deadEndChestMultiplier : 1) * chestMult * zoneChest;
+        if (rng.chance(p)) chests.push({ x: m.x, y: m.y, room: r.index, secret: hiddenRoom, ...(vaultRoom ? { locked: true } : {}) });
+      }
+      if (m.kind === 'secretChest' && secretRooms.has(r.index)) chests.push({ x: m.x, y: m.y, room: r.index, secret: true, ...(vaultRoom ? { locked: true } : {}) });
       if (m.kind === 'boss') bossSpawn = { x: m.x, y: m.y };
     }
   }
@@ -317,7 +435,7 @@ function assemble(opts: FloorGenOptions, lib: TemplateLibrary, rng: Rng, layout:
   // 제단: 입구/출구/빨간/보스가 아닌 방의 포탈 후보 위치
   let altar: SpawnPoint | null = null;
   if (opts.kind === 'floor' && rng.chance(ROOM_RANDOM.altarChance)) {
-    const pool = rooms.filter((r) => r.role === 'normal');
+    const pool = rooms.filter((r) => r.role === 'normal' && r.index !== plan.vault && r.index !== plan.hidden);
     if (pool.length) {
       const room = rng.pick(pool);
       const spot = rng.pick(portalsOf(room.index));
@@ -327,19 +445,62 @@ function assemble(opts: FloorGenOptions, lib: TemplateLibrary, rng: Rng, layout:
   // 상점: 제단/함정이 없는 일반 방 하나의 포탈 후보 위치 (기획자 요청)
   let shop: SpawnPoint | null = null;
   if (opts.kind === 'floor') {
-    const pool = rooms.filter((r) => r.role === 'normal' && !r.trap && r.index !== altar?.room && portalsOf(r.index).length > 0);
+    const pool = rooms.filter(
+      (r) => r.role === 'normal' && !r.trap && r.index !== altar?.room && r.index !== plan.vault && r.index !== plan.hidden && portalsOf(r.index).length > 0,
+    );
     if (pool.length) {
       const room = rng.pick(pool);
       const spot = rng.pick(portalsOf(room.index));
       shop = { x: spot.x, y: spot.y, room: room.index };
     }
   }
-  // 상자와 제단/상점이 같은 칸에 겹치지 않게, 상점 방에는 몬스터를 두지 않는다
-  const taken = [altar, shop].filter((p): p is SpawnPoint => p !== null);
+  // 잠긴 방: 보물 상자는 그 방의 포탈 후보 중 하나, 열쇠는 입구에서 먼 다른 방 (먼 방일수록 잘 뽑힌다)
+  let vault: GeneratedFloor['vault'] = null;
+  let key: SpawnPoint | null = null;
+  if (plan.vault >= 0) {
+    const spot = rng.pick(portalsOf(plan.vault));
+    vault = { room: plan.vault, chest: { x: spot.x, y: spot.y } };
+    const keyRooms = rooms.filter(
+      (r) => r.role === 'normal' && r.index !== plan.vault && r.index !== plan.hidden && r.index !== altar?.room && r.index !== shop?.room && (layout.dist[r.index] ?? 0) >= 2,
+    );
+    const fallback = rooms.filter((r) => r.role === 'normal' && r.index !== plan.vault && r.index !== plan.hidden);
+    const pool = keyRooms.length ? keyRooms : fallback;
+    if (pool.length) {
+      const room = pool[rng.weightedIndex(pool.map((r) => 1 + (layout.dist[r.index] ?? 0)))]!;
+      const ks = rng.pick(portalsOf(room.index));
+      key = { x: ks.x, y: ks.y, room: room.index };
+    }
+  }
+
+  // 상자와 제단/상점/열쇠/보물 상자가 같은 칸에 겹치지 않게, 상점 방에는 몬스터를 두지 않는다
+  const taken = [altar, shop, key, vault ? { ...vault.chest, room: vault.room } : null].filter((p): p is SpawnPoint => p !== null);
   const filteredChests = chests.filter((ch) => !taken.some((p) => p.x === ch.x && p.y === ch.y));
   const filteredMonsters = shop ? monsters.filter((m) => m.room !== shop!.room) : monsters;
 
   const opened = widen ? widenSeams(grid, layout, rng) : 0;
+
+  // 특별한 출입구: 열어 둔 출입구 타일을 지름길 문/잠긴 문/부서지는 벽으로 바꾼다
+  const specialDoors: SpecialDoor[] = [];
+  layout.links.forEach((l, i) => {
+    if (l.kind === 'open') return;
+    const t = linkDoorTiles(layout, l, slots[i]!);
+    const tiles = [...t.a, ...t.b];
+    const tile = l.kind === 'gate' ? Tile.Gate : l.kind === 'lock' ? Tile.Lock : Tile.Breakable;
+    for (const p of tiles) setTile(grid, p.x, p.y, tile);
+    if (l.kind === 'secret') {
+      const room = l.a === plan.hidden ? l.b : l.a;
+      for (const p of tiles) secretWalls.push({ x: p.x, y: p.y, room });
+    }
+    if (l.kind === 'gate') {
+      const openRoom = plan.gates.get(i)!;
+      // 레버: 여는 쪽 방의 출입구 바로 안쪽 칸 (템플릿 규격상 바닥이 있다)
+      const side = openRoom === l.a ? t.a : t.b;
+      const dirFromOpen = openRoom === l.a ? l.dir : OPPOSITE[l.dir];
+      const inward = dirFromOpen === 'right' ? -1 : 1;
+      const bottom = side[side.length - 1]!;
+      specialDoors.push({ link: i, kind: 'gate', tiles, openRoom, lever: { x: bottom.x + inward, y: bottom.y } });
+    } else specialDoors.push({ link: i, kind: l.kind, tiles });
+  });
 
   if (!bossSpawn) throw new Error('아레나에 보스 스폰 없음');
   return {
@@ -359,6 +520,11 @@ function assemble(opts: FloorGenOptions, lib: TemplateLibrary, rng: Rng, layout:
     secretWalls,
     altar,
     shop,
+    specialDoors,
+    key,
+    vault,
+    hiddenRoom: plan.hidden,
+    zones: plan.zones,
   };
 }
 
@@ -431,7 +597,9 @@ export function floorReachErrors(f: Assembled): string[] {
   need(f.shop, '상점');
   need(f.altar, '제단');
   need(f.boss.spawn, '보스');
-  for (const c of f.chests) if (!c.secret) need(c, '상자');
+  for (const c of f.chests) if (!c.secret && !c.locked) need(c, '상자');
+  need(f.key, '열쇠');
+  for (const d of f.specialDoors) if (d.lever) need(d.lever, '지름길 레버');
   for (const n of reach) {
     if (back.has(n)) continue;
     const c = g.cells[n] as number;
@@ -461,10 +629,12 @@ export function generateFloor(opts: FloorGenOptions, lib: TemplateLibrary = load
       generationLog.push(`${attempt}: 레이아웃 실패`);
       continue;
     }
+    // 탐사 요소 (일반 층만): 지름길 연결을 더하고 잠긴 방/숨은 방/구역을 정한다
+    const plan = opts.kind === 'floor' ? planExploration(rng, layout, opts.floor) : NO_PLAN;
     // 같은 레이아웃으로 경계를 튼 층 → 실패하면 트지 않은 층 (템플릿 검증만으로 이동이 보장된다)
     const assembleSeed = rng.int(0, 0x7fffffff);
     for (const widen of [true, false]) {
-      const floor = assemble(opts, lib, new Rng(assembleSeed), layout, widen);
+      const floor = assemble(opts, lib, new Rng(assembleSeed), layout, widen, plan);
       if (!floor) {
         lastErrors = ['템플릿 배정 실패'];
         generationLog.push(`${attempt}: 템플릿 배정 실패`);

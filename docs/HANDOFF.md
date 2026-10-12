@@ -43,7 +43,7 @@
 ```bash
 npm ci                  # 컨테이너가 새로 뜨면 node_modules가 없을 수 있다
 npm run dev             # http://localhost:5173 (디버그 기능 켜짐)
-npm test                # Vitest 245개 (시드 1,000개 맵 생성 포함, 약 5초)
+npm test                # Vitest 545개 (약 15초) (시드 1,000개 맵 생성 포함, 약 5초)
 npm run typecheck       # src + tests 두 tsconfig 모두
 npm run build:preview   # 배포와 같은 빌드 (typecheck 포함)
 ```
@@ -71,14 +71,16 @@ npm run build:preview   # 배포와 같은 빌드 (typecheck 포함)
 src/config/   수치 전부 (display·CAMERA, movement, generation, combat, progression, rewards, input, map, themes)
 src/core/     Phaser 비의존 순수 로직 + 테스트 대상
   rng.ts, seed.ts            sfc32 시드 PRNG, deriveSeed (Math.random 금지, 테스트로 검사)
-  generation/                template(ASCII 파서/규격 검사), reach(도달성 시뮬레이터), validateTemplate,
-                             layout(방 그리드), floor(층 조립/검증/재생성), templateLibrary
+  generation/                template(ASCII 파서/규격 검사, 출입구 자리), reach(도달성 시뮬레이터), validateTemplate,
+                             layout(방 그리드, 여러 칸 방), floor(층 조립/탐사 요소/경계 트기/층 전체 검증/재생성),
+                             templateLibrary(모양별 색인), roomgen(굴 모양 방 생성기, 오프라인 전용)
   combat/, boss/brain.ts     스탯/피해, 보스 상태 머신(classifySituation 포함)
   map/                       exploration(방 공개), markers(약도 표식)
   loot.ts, escape.ts, character*.ts, secret.ts, run.ts
 src/data/     역할군 4, 특성 10, 성격 8, 몬스터 9, 보스 4, 아이템 12
-src/rooms/    방 템플릿 ASCII (출입구 조합별 파일 11개 × 4개 + arena.txt)
-src/scenes/   Boot, Preload, Title, CharacterSelect, Floor(층과 빨간 던전 공용), Hud, Item(보스 보상/제단/상점/아이템 교체), GameOver/Victory
+src/rooms/    방 템플릿 ASCII: 손으로 쓴 것(*.txt, 1×1 44개 + 아레나 3) + 자동 생성(gen/*.txt, 138개: scripts/gen-rooms.mjs)
+src/scenes/   Boot, Preload, Title, CharacterSelect, Floor(층과 빨간 던전 공용), Hud, Item(보스 보상/제단/상점/아이템 교체), GameOver/Victory,
+              ExploreFeatures(지름길 레버, 열쇠/잠긴 문, 숨은 방 알림, 구역 알림/어둠 시야)
 src/entities/ Player, Monster, Boss, Portal, Projectile, Chest
 src/combat/PlayerCombat.ts, src/fx/(Effects, Scenery), src/input/Controls.ts, src/ui/(SketchMap, text)
 src/assets/manifest.json  에셋 키 → public/assets/ 파일. 없으면 플레이스홀더 자동 생성 (docs/ASSETS.md)
@@ -87,7 +89,12 @@ src/assets/manifest.json  에셋 키 → public/assets/ 파일. 없으면 플레
 ## 5. 꼭 알아야 할 설계 규칙과 함정
 
 - **모든 수치는 config/ 또는 data/에**. 하드코딩 금지. `Math.random()` 금지(src 전체 검사 테스트 있음). Phaser 파티클 내부 난수는 연출 전용이라 허용.
-- **방 템플릿 규격** (`config/generation.ts`의 `DOOR`): 30×17, 좌우 출입구 12~15행, 상하 출입구 13~16열. 위 출입구가 있는 방은 2행 13~16열이 **반드시 `=`(단방향)** — 천장 바로 아래 1칸은 몸(22px)이 안 들어가서 벽이면 갇힌다. 아래 출입구가 있는 방은 16행 11·12·17·18열 벽 + 그 위 13~15행 비움.
+- **방 템플릿 규격** (`config/generation.ts`의 `DOOR`): 크기는 30×17 칸의 배수(1×1, 2×1, 3×1, 1×2, 2×2). 가장자리의 칸 구간마다 출입구 자리: 좌우 low 12~15행/high 4~7행(바로 아래 행이 바닥), 상하 left 5~8/mid 13~16/right 21~24열. 그 자리가 모두 `D`면 그 출입구를 쓸 수 있고, 층에서는 쓰는 출입구만 열린다(나머지 D는 벽). 위 출입구 자리 아래 2행은 **반드시 `=`(발사대)** — 천장 바로 아래 1칸은 몸(22px)이 안 들어가서 벽이면 갇힌다. 아래 출입구 자리 양옆 두 칸은 바닥 행이 벽(착지 턱), 그 위 3행은 비움. 이웃한 두 방은 양쪽 템플릿이 모두 가진 자리로 이어진다(`floor.ts`의 assignTemplates).
+- **템플릿 검증**은 모든 출입구를 열고 출입구마다 따로 떨어진 스텁을 붙여 "모든 출입구 쌍 이동 + 표식 도달 + 구덩이 없음"을 본다. 그래서 일부만 열어도 이어진다.
+- **자동 생성 방** (`core/generation/roomgen.ts`, `node scripts/gen-rooms.mjs`): 굴을 파고 도달성 시뮬레이터로 막힌 곳에 단방향 발판 사다리를 놓는다(한 단에 위 2칸·옆 3칸). 물리값/몸 크기/가시 판정/출입구 규격을 바꾸면 **생성기를 다시 돌리고** `npm test`로 확인할 것. 생성 결과 파일은 직접 고치지 않는다.
+- **방 경계 트기 + 층 전체 검증**: 좌우로 이어진 방 사이 벽을 양쪽이 빈 높이에서 허문다(`widenSeams`). 이건 방 단위 보장 밖이라 `generateFloor`가 층 전체를 시뮬레이션(`floorReachErrors`, 이 컨테이너에서 층당 약 0.3초)하고, 실패하면 트지 않은 층을 쓴다. 대량 생성 테스트는 `reachCheck: false`로 끈다(안 끄면 테스트가 2분 넘게 걸린다).
+- **탐사 요소** (`planExploration`): 지름길(gate)은 레이아웃에 연결을 더하므로 템플릿 배정 전에 정한다. 잠긴 문/지름길 문은 `Tile.Lock`/`Tile.Gate`(막힌 타일), 숨은 방 입구는 `Tile.Breakable`. 층 전체 검증은 문이 닫힌 상태에서 열쇠·레버·출구 등에 갈 수 있는지 본다. 잠긴 방 안 상자는 `locked`, 숨은 방 상자는 `secret`.
+- **블록 주석 안에 `**/` 금지**: 글롭 경로를 주석에 쓰다가 주석이 닫혀 빌드가 깨진 적이 있다.
 - **발판 높이 계산 실수 주의**: "3타일 오르기" = 서 있는 바닥 윗면끼리 3칸 차이. 템플릿 작성 중 여러 번 4칸으로 잘못 셌다. 템플릿을 고치면 `npm test`가 도달 불가 위치를 알려 준다.
 - **도달성 검증기**(`core/generation/reach.ts`)는 게임과 같은 `PlayerMotor`와 타일 충돌로 조작을 시뮬레이션한다. 물리값/가시 판정/몸 크기를 바꾸면 검증기도 같은 값을 쓰므로 템플릿이 실패할 수 있다. 가장 느린 이동속도(강철 피부 0.9배) 기준(`MIN_SPEED_MULTIPLIER`).
 - **입력** (`input/Controls.ts`): 패드는 Phaser의 Gamepad 래퍼가 아니라 `navigator.getGamepads()`를 직접 읽는다(래퍼는 값이 정확히 1일 때만 눌림, 씬 전환 뒤 값이 바뀔 때까지 무시해서 브라우저마다 달라질 수 있음). 패드 버튼은 그 씬에서 한 번 떼어진 걸 본 뒤부터 눌림으로 친다(`padArmed`, 이전 씬 입력 이월 방지). 단, 페이지에서 패드가 처음 보이는 프레임의 누름은 바로 인정한다(Safari/Chrome은 버튼을 눌러야 패드를 알려 줌). 디버그는 LB + 버튼(`INPUT.gamepad.debugButtons`). 기획자는 아이패드라 키보드가 없다: **새 기능은 패드만으로 되는지 반드시 확인**. 키보드는 짧은 탭을 놓치지 않게 key down 이벤트를 래치한다. 씬 전환 관련 입력을 고칠 때 이 둘을 깨지 않게.
@@ -102,6 +109,7 @@ src/assets/manifest.json  에셋 키 → public/assets/ 파일. 없으면 플레
 ## 6. 기획자에게 확인 중인 것
 
 - 약도에서 포탈을 처음부터 보일지(현재: 화면에 한 번 보인 뒤 표시, `config/map.ts`의 `showUndiscoveredPortals`) — QUESTIONS 28번.
+- 자동 생성 방은 사다리용 단방향 발판이 많다(기획자가 블록 그림을 교체할 예정). 모양이 마음에 안 들면 `roomgen.ts`의 굴 파기/사다리 규칙을 고친다.
 - 밸런스(역할군/몬스터/보스/아이템/레벨/골드 수치)는 실제 플레이로 조정한 적이 없다. 레벨 곡선만 몬스터 수 시뮬레이션으로 맞췄다(9층 진입 Lv 12 전후).
 - 방 사이 벽(2타일)과 출입구(4타일)를 더 크게 터서 진짜 한 덩어리 지형으로 만드는 안은 제안만 했다. 하려면 층 전체 단위 도달성 검증을 다시 설계해야 한다.
 - 에셋은 전부 플레이스홀더. 기획자가 픽셀아트로 교체 예정(규격은 docs/ASSETS.md).

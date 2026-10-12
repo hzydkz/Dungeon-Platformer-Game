@@ -14,6 +14,8 @@ export interface SketchSource {
   readonly floorData: GeneratedFloor;
   readonly exploration: Exploration;
   readonly label: string;
+  /** 구역 (공개된 방을 색으로 표시) */
+  readonly zones: readonly { readonly kind: 'nest' | 'dark' | 'trap'; readonly rooms: readonly number[] }[];
   /** 가진 아이템, 레벨, 골드 (지도 아래쪽/제목 줄에 표시) */
   readonly status: { readonly items: readonly ItemInstance[]; readonly level: number; readonly gold: number };
   mapInput(): MarkerInput;
@@ -66,9 +68,9 @@ export class SketchMap {
     this.icons = scene.add.graphics();
     this.labelLayer = scene.add.container(0, 0);
     const legend = scene.add
-      .text(p.x + 10, p.y + p.height - 14, '● 현재 위치   ◆ 보스   ▣ 상점   ● 포탈(발견하면)   ■ 상자   ▲ 제단', textStyle('tiny', c.ink))
+      .text(p.x + 10, p.y + p.height - 14, '● 현재  ◆ 보스  ▣ 상점  ● 포탈  ■ 상자  ▲ 제단  ▮ 문', textStyle('tiny', c.ink))
       .setOrigin(0, 0);
-    const close = scene.add.text(p.x + p.width - 10, p.y + p.height - 14, 'Tab · M / View · Y 떼면 닫힘 · 이동 느려짐', textStyle('tiny', c.unvisited)).setOrigin(1, 0);
+    const close = scene.add.text(p.x + p.width - 10, p.y + p.height - 14, '떼면 닫힘 · 보는 동안 느려짐', textStyle('tiny', c.unvisited)).setOrigin(1, 0);
     this.status = scene.add.text(p.x + p.width - 10, p.y + 7, '', textStyle('small', c.ink)).setOrigin(1, 0);
     // 아이템 칸: 3열 (등급 상자, 이름, 효과)
     const colW = Math.floor((p.width - 20) / ITEMS.slots);
@@ -253,6 +255,22 @@ export class SketchMap {
       li++;
     };
     const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
+    // 구역: 공개된 방을 구역 색으로 칠하고 첫 방에 이름
+    const ZONE_LABEL = { nest: '둥지', dark: '어둠', trap: '함정' } as const;
+    for (const z of src.zones) {
+      const col = c.zone[z.kind];
+      let named = false;
+      for (const ri of z.rooms) {
+        if (!src.exploration.revealed.has(ri)) continue;
+        const r = f.rooms[ri]!;
+        const [x0, y0] = this.toScreen(r.x, r.y);
+        g.fillStyle(col, 0.18).fillRect(x0, y0, r.w * this.scale, r.h * this.scale);
+        if (!named) {
+          named = true;
+          label({ kind: 'player', x: 0, y: 0, label: ZONE_LABEL[z.kind], spent: false }, x0 + 2, y0 + 6, hex(col));
+        }
+      }
+    }
     for (const m of markers) {
       const [x, y] = this.toScreen(m.x, m.y);
       const a = m.spent ? 0.45 : 1;
@@ -283,6 +301,18 @@ export class SketchMap {
         case 'altar':
           g.fillStyle(c.altar, a).fillTriangle(x, y - 4, x + 4, y + 3, x - 4, y + 3);
           label(m, x, y, hex(c.altar));
+          break;
+        case 'gate':
+        case 'lock': {
+          const col = m.kind === 'gate' ? c.gate : c.lock;
+          if (m.spent) g.lineStyle(1, col, 0.8).strokeRect(x - 2, y - 4, 4, 8);
+          else g.fillStyle(col, 1).fillRect(x - 2, y - 4, 4, 8);
+          label(m, x, y, hex(col));
+          break;
+        }
+        case 'key':
+          g.fillStyle(c.lock, 1).fillCircle(x - 1, y - 1, 2.5).fillRect(x, y, 4, 1.5);
+          label(m, x, y, hex(c.lock));
           break;
         case 'shop':
           g.fillStyle(c.shop, 1).fillRect(x - 4, y - 4, 8, 8);

@@ -103,6 +103,17 @@ function makeTileset(scene: Phaser.Scene, e: TilesetEntry): void {
           ctx.fillRect(ox + 10, 5, 2, 1);
           ctx.fillRect(ox + 7, 12, 3, 1);
         }
+        if (slot === 'gate') {
+          // 지름길 문: 세로 창살
+          ctx.fillStyle = shade(color, 0.55);
+          for (let k = 2; k < s; k += 4) ctx.fillRect(ox + k, 1, 2, s - 2);
+        }
+        if (slot === 'lock') {
+          // 잠긴 문: 가운데 자물쇠 구멍
+          ctx.fillStyle = shade(color, 0.45);
+          ctx.fillRect(ox + 6, 5, 4, 4);
+          ctx.fillRect(ox + 7, 9, 2, 3);
+        }
         if (slot === 'breakable') {
           // 비밀 벽: 일반 벽과 거의 같고 가는 금 하나만 보인다
           ctx.fillStyle = shade(color, 0.75);

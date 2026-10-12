@@ -15,7 +15,7 @@ import { lineOfSight } from '../core/combat/los';
 import type { Stats } from '../core/combat/stats';
 import { generateFloor, type FloorKind, type GeneratedFloor, type TilePos } from '../core/generation/floor';
 import { escapeTimeForLayout } from '../core/escape';
-import { altarItem, bossGold, bossItemChoices, monsterGold, rollChest, type RewardSource } from '../core/loot';
+import { altarItem, bossGold, bossItemChoices, goldScale, monsterGold, rollChest, type RewardSource } from '../core/loot';
 import { itemPrice, potionPrice, rollItemChoices, itemLuck } from '../core/items';
 import { addXp, killXp, xpToNext } from '../core/level';
 import type { ItemInstance } from '../data/items';
@@ -27,7 +27,7 @@ import type { RunState } from '../core/run';
 import { Tile, getTile, isHazardTile, isOneWayTile, isSolidTile, setTile } from '../core/tiles';
 import { CATALOG } from '../data/catalog';
 import { REWARDS } from '../config/rewards';
-import { LEVEL, SHOP } from '../config/items';
+import { ECONOMY, LEVEL, SHOP } from '../config/items';
 import { monsterById, monsterTable } from '../data/monsters';
 import { roleById } from '../data/roles';
 import { bossForFloor } from '../data/bosses';
@@ -45,6 +45,7 @@ import { buildTilemap, setMapTile } from './tilemap';
 import type { HudScene } from './HudScene';
 import type { ItemReceiver, ItemSceneData, ShopStock } from './ItemScene';
 import { onResize } from '../ui/layout';
+import { ExploreFeatures } from './ExploreFeatures';
 import { RegistryKey, SceneKey } from './keys';
 
 export interface FloorSceneData {
@@ -65,11 +66,14 @@ export interface HudSource {
   readonly escapeTimeLeft: number | null;
   /** 레벨, 경험치, 골드, 아이템 */
   readonly status: PlayerStatus;
+  readonly zones: GeneratedFloor['zones'];
   /** 약도에 그릴 상태 */
   mapInput(): MarkerInput;
 }
 
 export interface PlayerStatus {
+  /** 이 층의 열쇠를 가지고 있다 */
+  readonly hasKey: boolean;
   readonly items: readonly ItemInstance[];
   readonly level: number;
   readonly xp: number;
@@ -117,6 +121,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
   protected altar: Phaser.GameObjects.Sprite | null = null;
   protected shopkeeper: Phaser.GameObjects.Sprite | null = null;
   protected shopStock: ShopStock | null = null;
+  explore!: ExploreFeatures;
   private hintTimer = 0;
   private hintedRooms = new Set<number>();
   private trapNoticeRooms = new Set<number>();
@@ -202,6 +207,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.setupBoss();
     this.setupExploration();
     this.setupShop();
+    this.setupExploreFeatures();
 
     // 보스전 외에는 방 경계가 아니라 층 전체를 부드럽게 따라간다
     const cam = this.cameras.main;
@@ -340,8 +346,9 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
 
   protected setupExploration(): void {
     this.chestGroup = this.physics.add.staticGroup();
-    for (const c of this.floorData.chests) {
-      const chest = new Chest(this, c.x, c.y, c.room, c.secret);
+    const treasure = this.floorData.vault ? [{ ...this.floorData.vault.chest, room: this.floorData.vault.room, secret: false, treasure: true }] : [];
+    for (const c of [...this.floorData.chests.map((x) => ({ ...x, treasure: false })), ...treasure]) {
+      const chest = new Chest(this, c.x, c.y, c.room, c.secret, c.treasure);
       this.chests.push(chest);
       const zone = this.add.zone(chest.x, chest.y - 8, 16, 16);
       this.chestGroup.add(zone);
@@ -366,6 +373,14 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     if (!chest.hurt()) return;
     this.fx.sound('sfx_chest', 0.6);
     this.fx.burst(chest.x, chest.y - 8, 0xffd060, 12, 90);
+    if (chest.treasure) {
+      // 잠긴 방 보물 상자: 골드 + 아이템 선택
+      this.gainGold(Math.round(ECONOMY.vaultGold * goldScale(this.difficultyLevel)), chest.x, chest.y - 24);
+      this.time.delayedCall(400, () => {
+        if (!this.ending) this.openReward('vault');
+      });
+      return;
+    }
     const items = rollChest(this.lootRng, this.stats, this.difficultyLevel);
     const lines: string[] = [];
     for (const it of items) {
@@ -389,6 +404,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
       }
     }
     for (const c of this.chests) if (c.alive && Phaser.Geom.Intersects.RectangleToRectangle(rect, c.hitRect(this.tmpRect))) this.openChest(c);
+    this.explore?.hitRect(rect);
   }
 
   /** 비밀 벽 한 칸을 치면 이어진 비밀 벽이 모두 부서진다 (원거리 역할군도 통로를 열 수 있게) */
@@ -398,6 +414,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     while (stack.length) {
       const [x, y] = stack.pop()!;
       if (getTile(this.grid, x, y) !== Tile.Breakable) continue;
+      this.explore?.onWallBroken(x, y);
       setTile(this.grid, x, y, Tile.Empty);
       setMapTile(this.layer, x, y, Tile.Empty);
       this.fx.burst(x * s + s / 2, y * s + s / 2, 0xa08a6a, 10, 80);
@@ -422,6 +439,28 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.fx.burst(this.altar.x, this.altar.y - 12, 0x6fd6c8, 16, 90);
     const item = altarItem(this.lootRng, this.stats, this.run.character.role, this.floorNumber);
     this.openItemScene({ mode: 'give', title: '제단에 피를 바쳤다', item, resume: this.scene.key });
+  }
+
+  // ---------- 탐사 요소: 지름길, 열쇠/잠긴 방, 숨은 방, 구역 ----------
+
+  protected setupExploreFeatures(): void {
+    const scene = this;
+    this.explore = new ExploreFeatures(this, {
+      floorData: this.floorData,
+      get currentRoom() {
+        return scene.currentRoom;
+      },
+      player: this.player,
+      notifyText: (text, seconds, color) => this.hud()?.notify(text, seconds, color),
+      setTiles: (tiles, tile) => {
+        for (const t of tiles) {
+          setTile(this.grid, t.x, t.y, tile as never);
+          setMapTile(this.layer, t.x, t.y, tile);
+        }
+      },
+      burst: (x, y, color, count, speed) => this.fx.burst(x, y, color, count, speed),
+      sound: (key, volume) => this.fx.sound(key, volume),
+    });
   }
 
   // ---------- 상점 (층마다 1곳) ----------
@@ -511,7 +550,8 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
   protected openReward(source: RewardSource): void {
     const choices = bossItemChoices(this.lootRng, this.stats, this.run.character.role, source, this.floorNumber);
     if (choices.length === 0) return;
-    this.openItemScene({ mode: 'pick', title: source === 'redBoss' ? '빨간 던전 보상: 아이템 선택' : '보스 보상: 아이템 선택', choices, resume: this.scene.key });
+    const title = source === 'redBoss' ? '빨간 던전 보상: 아이템 선택' : source === 'vault' ? '보물 상자: 아이템 선택' : '보스 보상: 아이템 선택';
+    this.openItemScene({ mode: 'pick', title, choices, resume: this.scene.key });
   }
 
   // ---------- 보스 ----------
@@ -534,9 +574,13 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     });
   }
 
+  get zones() {
+    return this.floorData.zones;
+  }
+
   get status(): PlayerStatus {
     const r = this.run;
-    return { items: r.items, level: r.level, xp: r.xp, xpNext: xpToNext(r.level), gold: r.gold };
+    return { hasKey: this.explore?.hasKey ?? false, items: r.items, level: r.level, xp: r.xp, xpNext: xpToNext(r.level), gold: r.gold };
   }
 
   get bossBar(): HudSource['bossBar'] {
@@ -821,6 +865,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
 
   protected onEnterRoom(room: number): void {
     this.exploration.enter(room, this.stats.revealAdjacent > 0);
+    this.explore?.onEnterRoom(room);
     if (this.floorData.rooms[room]?.trap && !this.trapNoticeRooms.has(room)) {
       this.trapNoticeRooms.add(room);
       this.hud()?.notify('함정 방: 가시에 주의', 1.8, '#ff9060');
@@ -829,6 +874,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
 
   protected handlePortals(input: InputFrame): void {
     if (!input.upPressed) return;
+    if (this.explore.interact()) return;
     for (const c of this.chests) if (c.alive && c.contains(this.player.x, this.player.y)) this.openChest(c);
     if (this.altar && Math.abs(this.altar.x - this.player.x) < 12 && Math.abs(this.altar.y - 12 - this.player.y) < 20) this.useAltar();
     if (this.shopkeeper && Math.abs(this.shopkeeper.x - this.player.x) < 14 && Math.abs(this.shopkeeper.y - 12 - this.player.y) < 20) {
@@ -956,6 +1002,14 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
       chests: this.chests.map((c) => ({ x: Math.floor(c.x / DISPLAY.tileSize), y: Math.floor(c.y / DISPLAY.tileSize) - 1, room: c.room, alive: c.alive, secret: c.secret })),
       altar: this.floorData.altar && this.altar ? { ...this.floorData.altar, used: !!this.altar.getData('used') } : null,
       shop: this.floorData.shop,
+      doors: this.floorData.specialDoors
+        .filter((d) => d.kind !== 'secret')
+        .map((d) => {
+          const l = this.floorData.layout.links[d.link]!;
+          const mid = d.tiles[Math.floor(d.tiles.length / 2)]!;
+          return { x: mid.x, y: mid.y, kind: d.kind as 'gate' | 'lock', opened: this.explore.opened.has(d.link), rooms: [l.a, l.b] };
+        }),
+      key: this.floorData.key ? { ...this.floorData.key, taken: this.explore.keyTaken } : null,
       redPortalClosed: !this.portals.some((p) => p.kind === 'red'),
       bossDefeated: this.bossState === 'defeated',
     };
@@ -1056,6 +1110,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     for (const p of this.enemyShots.getChildren() as Projectile[]) p.tick(dt);
     if (this.boss && this.bossState === 'fighting') this.boss.tick(dt, this);
     this.updateEscapeTimer(dt);
+    this.explore.update(dt, this.cameras.main);
     this.updateSecretHint(dt);
     this.updateRoom();
     this.discoverPortals();

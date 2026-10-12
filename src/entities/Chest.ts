@@ -8,12 +8,15 @@ export class Chest extends Phaser.GameObjects.Sprite implements Hittable {
   alive = true;
   readonly room: number;
   readonly secret: boolean;
+  /** 잠긴 방의 보물 상자: 아이템 선택 + 골드 */
+  readonly treasure: boolean;
 
-  constructor(scene: Phaser.Scene, tileX: number, tileY: number, room: number, secret: boolean) {
+  constructor(scene: Phaser.Scene, tileX: number, tileY: number, room: number, secret: boolean, treasure = false) {
     const s = DISPLAY.tileSize;
-    super(scene, tileX * s + s / 2, (tileY + 1) * s, AssetKey.chest, 0);
+    super(scene, tileX * s + s / 2, (tileY + 1) * s, treasure ? AssetKey.treasureChest : AssetKey.chest, 0);
     this.room = room;
     this.secret = secret;
+    this.treasure = treasure;
     this.setOrigin(0.5, 1).setDepth(6);
     scene.add.existing(this);
     if (secret) this.setTint(0xffe8a0);
@@ -27,7 +30,7 @@ export class Chest extends Phaser.GameObjects.Sprite implements Hittable {
   hurt(): boolean {
     if (!this.alive) return false;
     this.alive = false;
-    const anim = `${AssetKey.chest}_open`;
+    const anim = `${this.treasure ? AssetKey.treasureChest : AssetKey.chest}_open`;
     if (this.scene.anims.exists(anim)) this.play(anim);
     this.setAlpha(0.7);
     return true;

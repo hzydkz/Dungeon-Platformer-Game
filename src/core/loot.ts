@@ -36,7 +36,7 @@ export function bossGold(level: number, red: boolean): number {
   return Math.round(ECONOMY.bossGold * level * (red ? ECONOMY.redBossGoldMultiplier : 1));
 }
 
-export type RewardSource = 'floorBoss' | 'redBoss';
+export type RewardSource = 'floorBoss' | 'redBoss' | 'vault';
 
 /** 보스 처치 아이템 선택지 (서로 다른 종류). 빨간 던전은 행운이 높고 성격(무모)이면 선택지 +1 */
 export function bossItemChoices(rng: Rng, stats: Stats, role: RoleId, source: RewardSource, floor: number): ItemInstance[] {

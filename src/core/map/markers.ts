@@ -5,13 +5,14 @@
  * - 출구/빨간 포탈: 화면에 한 번 보인 뒤부터 (설정)
  * - 상자/제단: 공개된 방에 있을 때, 연 상자/쓴 제단은 흐리게
  * - 상점: 처음부터 표시 (기획자 요청)
+ * - 지름길 문/잠긴 문: 양쪽 방 중 하나가 공개되면, 열쇠: 그 방이 공개되면 (주운 뒤에는 숨김)
  * - 현재 위치
  */
 import { MAP } from '../../config/map';
 import type { GeneratedFloor } from '../generation/floor';
 import type { Exploration } from './exploration';
 
-export type MarkerKind = 'player' | 'boss' | 'entrance' | 'exit' | 'red' | 'chest' | 'altar' | 'shop';
+export type MarkerKind = 'player' | 'boss' | 'entrance' | 'exit' | 'red' | 'chest' | 'altar' | 'shop' | 'gate' | 'lock' | 'key';
 
 export interface MapMarker {
   readonly kind: MarkerKind;
@@ -31,6 +32,9 @@ export interface MarkerInput {
   readonly altar: { readonly x: number; readonly y: number; readonly room: number; readonly used: boolean } | null;
   /** 상점 위치 (없으면 null) */
   readonly shop?: { readonly x: number; readonly y: number } | null;
+  /** 지름길 문/잠긴 문 (숨은 방 입구는 표시하지 않는다) */
+  readonly doors?: readonly { readonly x: number; readonly y: number; readonly kind: 'gate' | 'lock'; readonly opened: boolean; readonly rooms: readonly number[] }[];
+  readonly key?: { readonly x: number; readonly y: number; readonly room: number; readonly taken: boolean } | null;
   /** 빨간 포탈이 이미 닫혔는지 */
   readonly redPortalClosed: boolean;
   readonly bossDefeated: boolean;
@@ -68,6 +72,11 @@ export function mapMarkers(input: MarkerInput, options: MarkerOptions = MAP): Ma
     out.push({ kind: 'altar', x: input.altar.x, y: input.altar.y, label: '제단', spent: input.altar.used });
   }
   if (input.shop) out.push({ kind: 'shop', x: input.shop.x, y: input.shop.y, label: '상점', spent: false });
+  for (const d of input.doors ?? []) {
+    if (!d.rooms.some((r) => ex.revealed.has(r))) continue;
+    out.push({ kind: d.kind, x: d.x, y: d.y, label: d.kind === 'gate' ? (d.opened ? '지름길' : '지름길(닫힘)') : d.opened ? '열린 문' : '잠긴 문', spent: d.opened });
+  }
+  if (input.key && !input.key.taken && ex.revealed.has(input.key.room)) out.push({ kind: 'key', x: input.key.x, y: input.key.y, label: '열쇠', spent: false });
   out.push({ kind: 'player', x: input.player.x, y: input.player.y, label: '현재 위치', spent: false });
   return out;
 }

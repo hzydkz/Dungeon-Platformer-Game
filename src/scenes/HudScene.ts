@@ -115,7 +115,7 @@ export class HudScene extends Phaser.Scene {
     const st = src.status;
     const g = this.bars;
     this.levelText.setText(`Lv ${st.level}`);
-    this.goldText.setText(`${st.gold} G`);
+    this.goldText.setText(`${st.gold} G${st.hasKey ? '  열쇠' : ''}`);
     g.fillStyle(0x000000, 0.6).fillRect(4, 52, 52, 5);
     g.fillStyle(0xfff080, 1).fillRect(5, 53, Math.round(50 * Math.min(1, st.xp / Math.max(1, st.xpNext))), 3);
     for (let i = 0; i < ITEMS.slots; i++) {

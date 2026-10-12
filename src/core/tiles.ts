@@ -9,12 +9,16 @@ export const Tile = {
   Breakable: 4,
   /** 보스방 봉쇄 등으로 런타임에 생기는 벽 */
   Seal: 5,
+  /** 지름길 문: 한쪽(레버가 있는 쪽)에서만 연다 */
+  Gate: 6,
+  /** 잠긴 문: 그 층의 열쇠로 연다 */
+  Lock: 7,
 } as const;
 export type TileId = (typeof Tile)[keyof typeof Tile];
 
 /** 완전히 막힌 타일 (모든 면 충돌) */
 export function isSolidTile(t: number): boolean {
-  return t === Tile.Wall || t === Tile.Breakable || t === Tile.Seal;
+  return t === Tile.Wall || t === Tile.Breakable || t === Tile.Seal || t === Tile.Gate || t === Tile.Lock;
 }
 
 /** 위에서만 밟을 수 있는 타일 */

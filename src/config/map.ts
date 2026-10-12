@@ -29,6 +29,18 @@ export const MAP = {
     chest: 0xc89010,
     altar: 0x208a7a,
     shop: 0xc06a00,
+    gate: 0x2a8a5a,
+    lock: 0xb08010,
+    zone: { nest: 0xb03030, dark: 0x302850, trap: 0xb06020 },
     player: 0xd02020,
   },
+} as const;
+
+/** 탐사 요소 연출 (어둠 구역 시야) */
+export const EXPLORE_FX = {
+  /** 이 반지름(px) 안은 밝다 */
+  darkInnerRadius: 56,
+  /** 이 반지름부터 가장 어둡다 */
+  darkOuterRadius: 140,
+  darkAlpha: 0.94,
 } as const;

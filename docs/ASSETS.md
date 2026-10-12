@@ -63,14 +63,17 @@
 | `proj_boss` | `sprites/proj_boss.png` | 10×10 (가로로 1칸 이상) | - |
 | `pickup_heal` | `sprites/pickup_heal.png` | 8×8 (가로로 1칸 이상) | - |
 | `shopkeeper` | `sprites/shopkeeper.png` | 16×24 (가로로 2칸 이상) | `shopkeeper_idle` [0,1] 2fps 반복 |
+| `lever` | `sprites/lever.png` | 8×16 (가로로 2칸 이상) | `lever_idle` [0] 1fps<br>`lever_pulled` [1] 1fps |
+| `key_item` | `sprites/key.png` | 12×12 (가로로 1칸 이상) | - |
+| `treasure_chest` | `sprites/treasure_chest.png` | 24×20 (가로로 2칸 이상) | `treasure_chest_idle` [0] 1fps<br>`treasure_chest_open` [1] 1fps |
 
 ### 타일셋
 
 | 키 | 파일 | 규격 |
 |---|---|---|
-| `tiles_cave` | `tiles/cave.png` | 16px 타일 6칸 가로: [빈칸, 벽, 단방향 블록(벽보다 밝은 꽉 찬 정사각형, 윗면만 밟힘), 가시, 부서지는 벽, 봉쇄] |
-| `tiles_ruins` | `tiles/ruins.png` | 16px 타일 6칸 가로: [빈칸, 벽, 단방향 블록(벽보다 밝은 꽉 찬 정사각형, 윗면만 밟힘), 가시, 부서지는 벽, 봉쇄] |
-| `tiles_abyss` | `tiles/abyss.png` | 16px 타일 6칸 가로: [빈칸, 벽, 단방향 블록(벽보다 밝은 꽉 찬 정사각형, 윗면만 밟힘), 가시, 부서지는 벽, 봉쇄] |
+| `tiles_cave` | `tiles/cave.png` | 16px 타일 8칸 가로: [빈칸, 벽, 단방향 블록(벽보다 밝은 꽉 찬 정사각형, 윗면만 밟힘), 가시, 부서지는 벽, 봉쇄, 지름길 문, 잠긴 문] |
+| `tiles_ruins` | `tiles/ruins.png` | 16px 타일 8칸 가로: [빈칸, 벽, 단방향 블록(벽보다 밝은 꽉 찬 정사각형, 윗면만 밟힘), 가시, 부서지는 벽, 봉쇄, 지름길 문, 잠긴 문] |
+| `tiles_abyss` | `tiles/abyss.png` | 16px 타일 8칸 가로: [빈칸, 벽, 단방향 블록(벽보다 밝은 꽉 찬 정사각형, 윗면만 밟힘), 가시, 부서지는 벽, 봉쇄, 지름길 문, 잠긴 문] |
 
 ### 이미지
 

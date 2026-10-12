@@ -39,9 +39,9 @@ export interface TilesetEntry {
   readonly tiles: Readonly<Record<TilesetSlot, string>>;
 }
 
-export type TilesetSlot = 'wall' | 'oneway' | 'spike' | 'breakable' | 'seal';
+export type TilesetSlot = 'wall' | 'oneway' | 'spike' | 'breakable' | 'seal' | 'gate' | 'lock';
 /** 타일셋 이미지의 가로 순서. 인덱스 0은 빈 칸이므로 이미지에서는 1번 칸부터 쓴다. */
-export const TILESET_SLOTS: readonly TilesetSlot[] = ['wall', 'oneway', 'spike', 'breakable', 'seal'];
+export const TILESET_SLOTS: readonly TilesetSlot[] = ['wall', 'oneway', 'spike', 'breakable', 'seal', 'gate', 'lock'];
 
 export interface AudioEntry {
   readonly key: string;

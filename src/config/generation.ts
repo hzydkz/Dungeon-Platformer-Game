@@ -112,3 +112,28 @@ export const ROOM_RANDOM = {
   /** 좌우로 이어진 두 방 사이 벽을 틀 확률 (양쪽이 모두 빈 높이만, 기획자 요청) */
   seamOpenChance: 0.75,
 } as const;
+
+/**
+ * 탐사 요소 (기획자 요청: 다시 돌아갈 이유와 발견하는 재미). 일반 층에만 (빨간 던전 제외). [가정]
+ */
+export type ZoneKind = 'nest' | 'dark' | 'trap';
+export const EXPLORE = {
+  /** 지름길 문 개수: 층 번호별 (1층부터) */
+  shortcuts: [1, 1, 1, 2, 2, 2, 2, 2, 2] as readonly number[],
+  /** 지름길로 이을 두 방의 입구 거리(방 그래프) 차이 최소값 (차이가 큰 쌍을 먼저 고른다) */
+  shortcutMinGap: 2,
+  /** 잠긴 보물 방(열쇠는 다른 곳)이 생길 확률 */
+  vaultChance: 0.85,
+  /** 숨은 방(입구가 부서지는 벽)이 생길 확률 */
+  hiddenRoomChance: 0.6,
+  /** 구역 개수: 층 번호별 */
+  zones: [0, 1, 1, 1, 2, 2, 2, 2, 2] as readonly number[],
+  /** 구역 하나의 방 수 */
+  zoneSize: [3, 5] as const,
+  /** 둥지: 몬스터 확률 배율, 상자 확률 배율 */
+  nest: { monsterMultiplier: 1.7, chestMultiplier: 1.5 },
+  /** 함정 구역: 함정 방이 될 확률, 상자 확률 배율 */
+  trap: { trapChance: 0.9, chestMultiplier: 2 },
+  /** 숨은 방의 상자 위치는 모두 상자 */
+  hiddenChestChance: 1,
+} as const;
