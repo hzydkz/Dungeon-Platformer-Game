@@ -1,15 +1,17 @@
 /**
- * 층 생성: 레이아웃 + 템플릿 선택 + 내부 랜덤 요소 + 특수 위치 (기획서 5장). Phaser 비의존.
+ * 층 생성: 레이아웃 + 템플릿 선택 + 출입구 자리 배정 + 방 경계 트기 + 내부 랜덤 요소 + 특수 위치 (기획서 5장). Phaser 비의존.
  * 층 검증에 실패하면 시드를 변형해 재생성한다 (5.4).
  */
-import { FLOOR_GRID, LAYOUT, RED_LAYOUT, ROOM, ROOM_RANDOM, DOOR } from '../../config/generation';
+import { DOOR, FLOOR_GRID, LAYOUT, RED_LAYOUT, ROOM, ROOM_RANDOM, type DoorSlot, type SideSlot, type VerticalSlot } from '../../config/generation';
 import { PROGRESSION } from '../../config/progression';
 import { Rng, deriveSeed } from '../rng';
 import { floorSeed, redDungeonSeed } from '../seed';
-import { Tile, createGrid, getTile, setTile, type TileGrid } from '../tiles';
-import { generateLayout, roomDistances, type Layout, type LayoutParams } from './layout';
-import { DIR_BIT, dirsOf, resolveTemplate, templateHas, type Marker, type RoomTemplate } from './template';
-import { loadLibrary, type TemplateLibrary } from './templateLibrary';
+import { Tile, createGrid, getTile, isOneWayTile, isSolidTile, setTile, type TileGrid } from '../tiles';
+import { generateLayout, roomDistances, roomEdges, type Layout, type LayoutParams, type Link } from './layout';
+import { REACH_PARAMS } from './params';
+import { buildReachGraph, canReach, reachableFrom } from './reach';
+import { DIR_DELTA, isSideDir, resolveTemplate, templateHas, type DoorCap, type Marker, type RoomTemplate } from './template';
+import { loadLibrary, shapeKey, type TemplateLibrary } from './templateLibrary';
 
 export type FloorKind = 'floor' | 'red';
 
@@ -23,6 +25,11 @@ export interface FloorGenOptions {
   readonly trapChanceBonus?: number;
   /** 상자 확률 배율 */
   readonly chestChanceMultiplier?: number;
+  /**
+   * 층 전체 도달성 검증 (기본 true). 방 경계를 튼 층은 이 검증을 통과해야 쓰고, 실패하면 경계를 트지 않은 층을 쓴다.
+   * 대량 생성 테스트처럼 속도가 중요할 때만 끈다.
+   */
+  readonly reachCheck?: boolean;
 }
 
 export interface TilePos {
@@ -41,7 +48,6 @@ export interface PlacedRoom {
   readonly y: number;
   readonly w: number;
   readonly h: number;
-  readonly doors: number;
   readonly deadEnd: boolean;
   readonly trap: boolean;
 }
@@ -65,6 +71,10 @@ export interface GeneratedFloor {
   readonly layout: Layout;
   readonly grid: TileGrid;
   readonly rooms: readonly PlacedRoom[];
+  /** 연결마다 고른 출입구 자리 (layout.links와 같은 순서) */
+  readonly linkSlots: readonly DoorSlot[];
+  /** 방 경계를 넓게 텄는지 */
+  readonly widened: boolean;
   readonly entrance: TilePos;
   readonly exitPortal: TilePos | null;
   readonly redPortal: TilePos | null;
@@ -119,28 +129,128 @@ function monsterChance(floor: number): number {
   return Math.min(ROOM_RANDOM.monsterChanceMax, ROOM_RANDOM.monsterChanceBase + ROOM_RANDOM.monsterChancePerFloor * (floor - 1));
 }
 
-function assemble(opts: FloorGenOptions, lib: TemplateLibrary, rng: Rng, layout: Layout): Omit<GeneratedFloor, 'seed' | 'usedSeed' | 'attempts'> {
+/** 연결 하나의 출입구 타일 (a 쪽, b 쪽, 월드 좌표) */
+export function linkDoorTiles(_layout: Layout, l: Link, slot: DoorSlot): { a: TilePos[]; b: TilePos[] } {
+  const RW = ROOM.widthTiles;
+  const RH = ROOM.heightTiles;
+  const [dx, dy] = DIR_DELTA[l.dir];
+  const out = { a: [] as TilePos[], b: [] as TilePos[] };
+  const cellA = { x: l.ax, y: l.ay };
+  const cellB = { x: l.ax + dx, y: l.ay + dy };
+  if (isSideDir(l.dir)) {
+    const rows = DOOR.side[slot as SideSlot];
+    const xa = l.dir === 'right' ? (cellA.x + 1) * RW - 1 : cellA.x * RW;
+    const xb = l.dir === 'right' ? cellB.x * RW : (cellB.x + 1) * RW - 1;
+    for (const r of rows) {
+      out.a.push({ x: xa, y: cellA.y * RH + r });
+      out.b.push({ x: xb, y: cellB.y * RH + r });
+    }
+  } else {
+    const cols = DOOR.vertical[slot as VerticalSlot];
+    const ya = l.dir === 'down' ? (cellA.y + 1) * RH - 1 : cellA.y * RH;
+    const yb = l.dir === 'down' ? cellB.y * RH : (cellB.y + 1) * RH - 1;
+    for (const c of cols) {
+      out.a.push({ x: cellA.x * RW + c, y: ya });
+      out.b.push({ x: cellB.x * RW + c, y: yb });
+    }
+  }
+  return out;
+}
+
+interface Assignment {
+  readonly templates: RoomTemplate[];
+  readonly slots: DoorSlot[];
+}
+
+/** 방마다 템플릿을 고르고 연결마다 양쪽이 모두 지원하는 출입구 자리를 정한다. 불가능하면 null */
+function assignTemplates(lib: TemplateLibrary, rng: Rng, layout: Layout): Assignment | null {
+  const n = layout.rooms.length;
+  const templates: (RoomTemplate | null)[] = new Array(n).fill(null);
+  const edgesOf = layout.rooms.map((r) => roomEdges(layout, r.index));
+  const slotsOn = (t: RoomTemplate, dir: string, seg: number) => t.caps.filter((c) => c.dir === dir && c.seg === seg).map((c) => c.slot);
+  // 입구에서 가까운 방부터 (이웃과 자리를 맞추기 쉽도록)
+  const order = [...layout.rooms.keys()].sort((a, b) => (layout.dist[a] ?? 0) - (layout.dist[b] ?? 0));
+  for (const r of order) {
+    const room = layout.rooms[r]!;
+    const pool = room.arena ? lib.arenas : lib.byShape.get(shapeKey(room.w, room.h)) ?? [];
+    const ok = pool.filter((t) =>
+      edgesOf[r]!.every((e) => {
+        const mine = slotsOn(t, e.dir, e.seg);
+        if (mine.length === 0) return false;
+        const l = layout.links[e.link]!;
+        const other = l.a === r ? l.b : l.a;
+        const ot = templates[other];
+        if (!ot) return true;
+        const oe = edgesOf[other]!.find((x) => x.link === e.link)!;
+        const theirs = slotsOn(ot, oe.dir, oe.seg);
+        return mine.some((s) => theirs.includes(s));
+      }),
+    );
+    if (ok.length === 0) return null;
+    templates[r] = rng.pick(ok);
+  }
+  const slots: DoorSlot[] = layout.links.map((l, i) => {
+    const ea = edgesOf[l.a]!.find((e) => e.link === i)!;
+    const eb = edgesOf[l.b]!.find((e) => e.link === i)!;
+    const sa = slotsOn(templates[l.a]!, ea.dir, ea.seg);
+    const sb = slotsOn(templates[l.b]!, eb.dir, eb.seg);
+    return rng.pick(sa.filter((s) => sb.includes(s)));
+  });
+  return { templates: templates as RoomTemplate[], slots };
+}
+
+/**
+ * 방 경계 트기 (기획자 요청: 방과 방 사이를 오가는 느낌 대신 이어진 굴).
+ * 좌우로 이어진 두 방 사이의 두 줄 벽에서, 양쪽 안쪽이 모두 빈 높이의 벽을 허문다.
+ * 위아래 경계는 착지 턱과 바닥이 걸려 있어 그대로 둔다.
+ */
+function widenSeams(grid: TileGrid, layout: Layout, rng: Rng): number {
+  const RW = ROOM.widthTiles;
+  const RH = ROOM.heightTiles;
+  let opened = 0;
+  for (const l of layout.links) {
+    if (l.kind !== 'open' || !isSideDir(l.dir)) continue;
+    if (layout.rooms[l.a]!.arena || layout.rooms[l.b]!.arena) continue;
+    if (!rng.chance(ROOM_RANDOM.seamOpenChance)) continue;
+    const xa = l.dir === 'right' ? (l.ax + 1) * RW - 1 : l.ax * RW;
+    const xb = l.dir === 'right' ? xa + 1 : xa - 1;
+    const step = l.dir === 'right' ? 1 : -1;
+    const open = (x: number, y: number) => !isSolidTile(getTile(grid, x, y)) && !isOneWayTile(getTile(grid, x, y));
+    for (let y = l.ay * RH + 1; y <= l.ay * RH + RH - 2; y++) {
+      if (getTile(grid, xa, y) !== Tile.Wall || getTile(grid, xb, y) !== Tile.Wall) continue;
+      if (!open(xa - step, y) || !open(xb + step, y)) continue;
+      setTile(grid, xa, y, Tile.Empty);
+      setTile(grid, xb, y, Tile.Empty);
+      opened++;
+    }
+  }
+  return opened;
+}
+
+type Assembled = Omit<GeneratedFloor, 'seed' | 'usedSeed' | 'attempts'>;
+
+function assemble(opts: FloorGenOptions, lib: TemplateLibrary, rng: Rng, layout: Layout, widen: boolean): Assembled | null {
   const RW = ROOM.widthTiles;
   const RH = ROOM.heightTiles;
   const grid = createGrid(layout.gridW * RW, layout.gridH * RH, Tile.Wall);
 
-  // 템플릿 선택
-  const chosen: RoomTemplate[] = layout.rooms.map((r) => {
-    const pool = r.arena ? lib.arenas.get(r.doors) : lib.byDoors.get(r.doors);
-    if (!pool || pool.length === 0) throw new Error(`출입구 조합에 맞는 템플릿 없음: ${r.doors}`);
-    return rng.pick(pool);
-  });
+  // 이웃과 출입구 자리가 맞지 않으면 다른 조합으로 몇 번 더 시도
+  let assigned: Assignment | null = null;
+  for (let i = 0; i < 6 && !assigned; i++) assigned = assignTemplates(lib, rng, layout);
+  if (!assigned) return null;
+  const { templates: chosen, slots } = assigned;
 
   // 비밀 벽: S가 있는 템플릿을 쓴 방 중 0~2개
   const secretCandidates = layout.rooms.filter((r) => !r.arena && templateHas(chosen[r.index]!, 'S')).map((r) => r.index);
   const secretCount = rng.int(ROOM_RANDOM.secretWallsPerFloor[0], ROOM_RANDOM.secretWallsPerFloor[1]);
   const secretRooms = new Set(rng.shuffle(secretCandidates).slice(0, secretCount));
 
-  const roleOf = (i: number): RoomRole =>
+  const roleOf = (i: number) =>
     i === layout.entrance ? 'entrance' : i === layout.exit ? 'exit' : i === layout.red ? 'red' : i === layout.boss ? 'boss' : 'normal';
   const trapChance = ROOM_RANDOM.trapRoomChance + (opts.trapChanceBonus ?? 0);
   const chestMult = opts.chestChanceMultiplier ?? 1;
   const mChance = monsterChance(opts.floor);
+  const linkCount = layout.rooms.map((r) => roomEdges(layout, r.index).length);
 
   const rooms: PlacedRoom[] = [];
   const markersByRoom: Marker[][] = [];
@@ -148,17 +258,16 @@ function assemble(opts: FloorGenOptions, lib: TemplateLibrary, rng: Rng, layout:
   const chests: ChestSpawn[] = [];
   const secretWalls: SpawnPoint[] = [];
   let bossSpawn: TilePos | null = null;
-  const bossDoorTiles: TilePos[] = [];
 
   for (const r of layout.rooms) {
     const t = chosen[r.index]!;
-    const [cx, cy] = r.cells[0]!;
-    const ox = cx * RW;
-    const oy = cy * RH;
+    const ox = r.x * RW;
+    const oy = r.y * RH;
     const role = roleOf(r.index);
     const trap = role === 'normal' && templateHas(t, 't') && rng.chance(trapChance);
+    const open: DoorCap[] = roomEdges(layout, r.index).map((e) => ({ dir: e.dir, seg: e.seg, slot: slots[e.link]! }));
     const { grid: tg, markers } = resolveTemplate(t, {
-      openDoors: r.doors,
+      open,
       optionalOn: rng.chance(ROOM_RANDOM.optionalPlatformChance),
       trapOn: trap,
       secretActive: secretRooms.has(r.index),
@@ -172,8 +281,8 @@ function assemble(opts: FloorGenOptions, lib: TemplateLibrary, rng: Rng, layout:
     }
     const world = markers.map((m) => ({ ...m, x: ox + m.x, y: oy + m.y }));
     markersByRoom.push(world);
-    const deadEnd = !r.arena && dirsOf(r.doors).length === 1;
-    rooms.push({ index: r.index, role, templateId: t.id, x: ox, y: oy, w: t.width, h: t.height, doors: r.doors, deadEnd, trap });
+    const deadEnd = !r.arena && linkCount[r.index] === 1;
+    rooms.push({ index: r.index, role, templateId: t.id, x: ox, y: oy, w: t.width, h: t.height, deadEnd, trap });
 
     for (const m of world) {
       if (m.kind === 'monster' && role !== 'entrance' && !r.arena && rng.chance(mChance)) monsters.push({ x: m.x, y: m.y, room: r.index });
@@ -184,11 +293,13 @@ function assemble(opts: FloorGenOptions, lib: TemplateLibrary, rng: Rng, layout:
       if (m.kind === 'secretChest' && secretRooms.has(r.index)) chests.push({ x: m.x, y: m.y, room: r.index, secret: true });
       if (m.kind === 'boss') bossSpawn = { x: m.x, y: m.y };
     }
-    if (r.arena) {
-      const doorX = r.doors & DIR_BIT.left ? ox : ox + t.width - 1;
-      for (const y of DOOR.sideRows) bossDoorTiles.push({ x: doorX, y: oy + y });
-    }
   }
+
+  // 보스방 출입구 타일 (아레나 쪽)
+  const bossLinkIndex = layout.links.findIndex((l) => l.b === layout.boss || l.a === layout.boss);
+  const bossLink = layout.links[bossLinkIndex]!;
+  const bossTiles = linkDoorTiles(layout, bossLink, slots[bossLinkIndex]!);
+  const bossDoorTiles = bossLink.b === layout.boss ? bossTiles.b : bossTiles.a;
 
   const portalsOf = (room: number) => (markersByRoom[room] ?? []).filter((m) => m.kind === 'portal');
   const roomCenter = (room: number) => {
@@ -228,6 +339,8 @@ function assemble(opts: FloorGenOptions, lib: TemplateLibrary, rng: Rng, layout:
   const filteredChests = chests.filter((ch) => !taken.some((p) => p.x === ch.x && p.y === ch.y));
   const filteredMonsters = shop ? monsters.filter((m) => m.room !== shop!.room) : monsters;
 
+  const opened = widen ? widenSeams(grid, layout, rng) : 0;
+
   if (!bossSpawn) throw new Error('아레나에 보스 스폰 없음');
   return {
     kind: opts.kind,
@@ -235,6 +348,8 @@ function assemble(opts: FloorGenOptions, lib: TemplateLibrary, rng: Rng, layout:
     layout,
     grid,
     rooms,
+    linkSlots: slots,
+    widened: opened > 0,
     entrance: { x: entrance.x, y: entrance.y },
     exitPortal: exitPortal ? { x: exitPortal.x, y: exitPortal.y } : null,
     redPortal: redPortal ? { x: redPortal.x, y: redPortal.y } : null,
@@ -248,11 +363,11 @@ function assemble(opts: FloorGenOptions, lib: TemplateLibrary, rng: Rng, layout:
 }
 
 /**
- * 층 단위 검증 (기획서 5.4): 입구 → 출구 포탈, 보스방, 빨간 포탈이 방 그래프로 연결되어 있고,
+ * 층 단위 구조 검증 (기획서 5.4): 입구 → 출구 포탈, 보스방, 빨간 포탈이 방 그래프로 연결되어 있고,
  * 모든 연결의 출입구 타일이 양쪽에서 열려 있으며, 특수 위치가 템플릿의 포탈 후보(검증된 도달 가능 칸)인지 확인.
- * 방 내부 도달성은 템플릿 검증(validateTemplate)이 보장한다.
+ * 방 내부 도달성은 템플릿 검증(validateTemplate), 방 경계를 튼 경우는 floorReachErrors가 확인한다.
  */
-export function validateFloor(f: Omit<GeneratedFloor, 'seed' | 'usedSeed' | 'attempts'>): string[] {
+export function validateFloor(f: Assembled): string[] {
   const errors: string[] = [];
   const L = f.layout;
   const dist = roomDistances(L.rooms.length, L.links, L.entrance);
@@ -265,25 +380,15 @@ export function validateFloor(f: Omit<GeneratedFloor, 'seed' | 'usedSeed' | 'att
   if (L.exit === L.boss) errors.push('출구와 보스방이 같음');
   if (L.red >= 0 && [L.entrance, L.exit, L.boss].includes(L.red)) errors.push('빨간 포탈 방이 입구/출구/보스방과 겹침');
 
+  const open = (x: number, y: number) => getTile(f.grid, x, y) === Tile.Empty;
+  L.links.forEach((l, i) => {
+    if (l.kind !== 'open') return;
+    const t = linkDoorTiles(L, l, f.linkSlots[i]!);
+    if (![...t.a, ...t.b].every((p) => open(p.x, p.y))) errors.push(`연결 ${l.a}-${l.b}(${l.dir}) 출입구가 막힘`);
+  });
+  // 사용하지 않는 칸은 벽
   const RW = ROOM.widthTiles;
   const RH = ROOM.heightTiles;
-  const open = (x: number, y: number) => getTile(f.grid, x, y) === Tile.Empty;
-  for (const l of L.links) {
-    const ra = L.rooms[l.a]!;
-    const rb = L.rooms[l.b]!;
-    // a 쪽 출입구가 있는 칸 (아레나는 여러 칸일 수 있으므로 b와 맞닿은 칸)
-    const cellA = ra.cells.find(([x, y]) => rb.cells.some(([bx, by]) => Math.abs(bx - x) + Math.abs(by - y) === 1)) ?? ra.cells[0]!;
-    const [ax, ay] = cellA;
-    const ox = ax * RW;
-    const oy = ay * RH;
-    const cells: [number, number][] = [];
-    if (l.dir === 'left') for (const y of DOOR.sideRows) cells.push([ox, oy + y], [ox - 1, oy + y]);
-    if (l.dir === 'right') for (const y of DOOR.sideRows) cells.push([ox + RW - 1, oy + y], [ox + RW, oy + y]);
-    if (l.dir === 'up') for (const x of DOOR.verticalCols) cells.push([ox + x, oy], [ox + x, oy - 1]);
-    if (l.dir === 'down') for (const x of DOOR.verticalCols) cells.push([ox + x, oy + RH - 1], [ox + x, oy + RH]);
-    if (!cells.every(([x, y]) => open(x, y))) errors.push(`연결 ${l.a}-${l.b}(${l.dir}) 출입구가 막힘`);
-  }
-  // 사용하지 않는 칸은 벽
   for (let gy = 0; gy < L.gridH; gy++) {
     for (let gx = 0; gx < L.gridW; gx++) {
       if ((L.cellRoom[gy * L.gridW + gx] as number) >= 0) continue;
@@ -304,10 +409,47 @@ export function validateFloor(f: Omit<GeneratedFloor, 'seed' | 'usedSeed' | 'att
   return errors;
 }
 
+/**
+ * 층 전체 타일 도달성 (게임과 같은 이동 시뮬레이션): 입구에서 출구/빨간 포탈/상점/제단/보스방/상자에 갈 수 있고,
+ * 입구에서 갈 수 있는 모든 칸에서 입구로 돌아올 수 있다 (빠지면 못 나오는 곳 없음).
+ */
+export function floorReachErrors(f: Assembled): string[] {
+  const g = buildReachGraph(f.grid, REACH_PARAMS);
+  const W = f.grid.width;
+  const cell = (p: TilePos) => p.y * W + p.x;
+  const start = [cell(f.entrance)];
+  const reach = reachableFrom(g, start);
+  const back = canReach(g, start);
+  const errors: string[] = [];
+  const need = (p: TilePos | null, name: string) => {
+    if (!p) return;
+    const n = g.nodeOf[cell(p)] ?? -1;
+    if (n < 0 || !reach.has(n)) errors.push(`${name} (${p.x},${p.y}) 도달 불가`);
+  };
+  need(f.exitPortal, '출구');
+  need(f.redPortal, '빨간 포탈');
+  need(f.shop, '상점');
+  need(f.altar, '제단');
+  need(f.boss.spawn, '보스');
+  for (const c of f.chests) if (!c.secret) need(c, '상자');
+  for (const n of reach) {
+    if (back.has(n)) continue;
+    const c = g.cells[n] as number;
+    errors.push(`(${c % W},${Math.floor(c / W)})에서 입구로 돌아올 수 없음`);
+    break;
+  }
+  return errors;
+}
+
+/** 디버그/테스트용: 마지막 생성에서 시도마다 실패한 이유 */
+export const generationLog: string[] = [];
+
 /** 층을 생성한다. 같은 옵션은 항상 같은 결과를 만든다. */
 export function generateFloor(opts: FloorGenOptions, lib: TemplateLibrary = loadLibrary()): GeneratedFloor {
   const seed = opts.kind === 'red' ? redDungeonSeed(opts.runSeed, opts.floor) : floorSeed(opts.runSeed, opts.floor);
+  const reachCheck = opts.reachCheck ?? true;
   let lastErrors: string[] = [];
+  generationLog.length = 0;
   for (let attempt = 0; attempt < LAYOUT.maxAttempts; attempt++) {
     const usedSeed = attempt === 0 ? seed : deriveSeed(seed, 'retry', attempt);
     const rng = new Rng(usedSeed);
@@ -316,12 +458,26 @@ export function generateFloor(opts: FloorGenOptions, lib: TemplateLibrary = load
     const layout = generateLayout(rng, { ...layoutParamsFor(opts, rng), strictBossRange });
     if (!layout) {
       lastErrors = ['레이아웃 실패'];
+      generationLog.push(`${attempt}: 레이아웃 실패`);
       continue;
     }
-    const floor = assemble(opts, lib, rng, layout);
-    const errors = validateFloor(floor);
-    if (errors.length === 0) return { ...floor, seed, usedSeed, attempts: attempt + 1 };
-    lastErrors = errors;
+    // 같은 레이아웃으로 경계를 튼 층 → 실패하면 트지 않은 층 (템플릿 검증만으로 이동이 보장된다)
+    const assembleSeed = rng.int(0, 0x7fffffff);
+    for (const widen of [true, false]) {
+      const floor = assemble(opts, lib, new Rng(assembleSeed), layout, widen);
+      if (!floor) {
+        lastErrors = ['템플릿 배정 실패'];
+        generationLog.push(`${attempt}: 템플릿 배정 실패`);
+        break;
+      }
+      const errors = validateFloor(floor);
+      if (errors.length === 0 && reachCheck) errors.push(...floorReachErrors(floor));
+      if (errors.length === 0) return { ...floor, seed, usedSeed, attempts: attempt + 1 };
+      lastErrors = errors;
+      generationLog.push(`${attempt}${widen ? 'w' : ''}: ${errors[0]}`);
+      if (!floor.widened) break;
+    }
   }
   throw new Error(`층 생성 실패 (${opts.kind} ${opts.floor}층, 시드 ${seed}): ${lastErrors.join(', ')}`);
 }
+

@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { LAYOUT, RED_LAYOUT } from '../src/config/generation';
-import { generateFloor, validateFloor, type GeneratedFloor } from '../src/core/generation/floor';
-import { REACH_PARAMS } from '../src/core/generation/params';
-import { buildReachGraph, reachableFrom } from '../src/core/generation/reach';
+import { floorReachErrors, generateFloor, validateFloor, type GeneratedFloor } from '../src/core/generation/floor';
 
-const gen = (runSeed: number, floor: number, kind: 'floor' | 'red' = 'floor') => generateFloor({ runSeed, floor, kind });
+/** 대량 생성 테스트는 층 전체 이동 시뮬레이션을 끈다 (그 검증은 아래 '층 전체 타일 도달성'에서) */
+const gen = (runSeed: number, floor: number, kind: 'floor' | 'red' = 'floor') => generateFloor({ runSeed, floor, kind, reachCheck: false });
 
 describe('층 생성 재현성', () => {
   it('같은 시드와 층은 항상 같은 맵', () => {
@@ -49,9 +48,10 @@ describe('시드 1,000개 생성 (기획서 5.4)', () => {
   it('빨간 던전 300개: 방 6~10개 + 보스 아레나, 보스는 먼 곳', () => {
     for (let s = 0; s < 300; s++) {
       const f = gen(s, (s % 9) + 1, 'red');
-      const normal = f.layout.rooms.filter((r) => !r.arena).length;
-      expect(normal).toBeGreaterThanOrEqual(RED_LAYOUT.roomCount[0]);
-      expect(normal).toBeLessThanOrEqual(RED_LAYOUT.roomCount[1]);
+      // 일반 방이 차지하는 칸 수 (여러 칸 방이 마지막에 조금 넘칠 수 있다)
+      const cells = f.layout.rooms.filter((r) => !r.arena).reduce((n, r) => n + r.w * r.h, 0);
+      expect(cells).toBeGreaterThanOrEqual(RED_LAYOUT.roomCount[0]);
+      expect(cells).toBeLessThanOrEqual(RED_LAYOUT.roomCount[1] + 3);
       expect(f.exitPortal).toBeNull();
       expect(f.redPortal).toBeNull();
     }
@@ -109,19 +109,36 @@ describe('특수 방 배치 (기획서 5.5)', () => {
 });
 
 describe('층 전체 타일 도달성 (방 그래프에 의존하지 않는 종단 검증)', () => {
-  for (const [seed, floor] of [
-    [11, 1],
-    [22, 5],
-  ] as const) {
-    it(`시드 ${seed}, ${floor}층: 입구에서 출구/보스/빨간 포탈 도달 가능`, () => {
-      const f = gen(seed, floor);
-      const g = buildReachGraph(f.grid, REACH_PARAMS);
-      const cell = (p: { x: number; y: number }) => p.y * f.grid.width + p.x;
-      const r = reachableFrom(g, [cell(f.entrance)]);
-      const has = (p: { x: number; y: number }) => r.has(g.nodeOf[cell(p)] as number);
-      if (f.exitPortal) expect(has(f.exitPortal)).toBe(true);
-      if (f.redPortal) expect(has(f.redPortal)).toBe(true);
-      expect(has(f.boss.spawn)).toBe(true);
+  // 런타임 기본 생성(reachCheck)과 같은 검증: 입구에서 출구/보스/빨간 포탈/상점/제단/상자 도달, 빠지면 못 나오는 곳 없음
+  for (let i = 0; i < 12; i++) {
+    const seed = i * 7919 + 5;
+    const floor = (i % 9) + 1;
+    it(`시드 ${seed}, ${floor}층`, () => {
+      const f = generateFloor({ runSeed: seed, floor, kind: 'floor' });
+      expect(floorReachErrors(f)).toEqual([]);
     }, 60_000);
   }
+  it('빨간 던전', () => {
+    const f = generateFloor({ runSeed: 77, floor: 4, kind: 'red' });
+    expect(floorReachErrors(f)).toEqual([]);
+  }, 60_000);
+});
+
+describe('방 구조 (기획자 요청: 방 사이를 오가는 느낌 대신 굴)', () => {
+  const floors: GeneratedFloor[] = [];
+  for (let s = 0; s < 60; s++) floors.push(gen(s * 31 + 1, (s % 9) + 1));
+
+  it('여러 칸 방(복도, 세로 굴, 큰 홀)이 나온다', () => {
+    const shapes = new Set(floors.flatMap((f) => f.layout.rooms.filter((r) => !r.arena).map((r) => `${r.w}x${r.h}`)));
+    for (const s of ['1x1', '2x1', '3x1', '1x2', '2x2']) expect(shapes.has(s), s).toBe(true);
+  });
+
+  it('출입구 자리가 다양하다 (좌우 2곳, 상하 3곳)', () => {
+    const slots = new Set(floors.flatMap((f) => f.linkSlots));
+    for (const s of ['low', 'high', 'left', 'mid', 'right']) expect(slots.has(s as never), s).toBe(true);
+  });
+
+  it('대부분의 층에서 방 경계가 트여 있다', () => {
+    expect(floors.filter((f) => f.widened).length / floors.length).toBeGreaterThan(0.8);
+  });
 });

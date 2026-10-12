@@ -3,7 +3,7 @@ import { generateFloor } from '../src/core/generation/floor';
 import { Exploration } from '../src/core/map/exploration';
 
 describe('지도 공개 (기획서 6장)', () => {
-  const f = generateFloor({ runSeed: 42, floor: 2, kind: 'floor' });
+  const f = generateFloor({ runSeed: 42, floor: 2, kind: 'floor', reachCheck: false });
   const L = f.layout;
 
   it('처음에는 보스방만 보인다', () => {

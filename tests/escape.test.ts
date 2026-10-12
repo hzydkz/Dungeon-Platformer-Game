@@ -16,7 +16,7 @@ describe('탈출 제한 시간 (기획서 7.2)', () => {
 
   it('빨간 던전에서 보스방→입구 최단 경로로 계산한다', () => {
     for (let s = 0; s < 30; s++) {
-      const f = generateFloor({ runSeed: s, floor: 3, kind: 'red' });
+      const f = generateFloor({ runSeed: s, floor: 3, kind: 'red', reachCheck: false });
       const L = f.layout;
       const path = shortestRoomPath(L, L.boss, L.entrance);
       expect(path[0]).toBe(L.boss);

@@ -6,19 +6,48 @@ export const ROOM = {
 } as const;
 
 /**
- * 출입구 규격 (기획서 5.3 "출입구 위치는 규격화한다"). 방 내부 좌표(타일).
- * - 좌우 출입구: 바닥(16행) 위 12~15행, 4타일 높이 세로 구멍
- * - 상하 출입구: 가로 중앙 13~16열, 4타일 폭
- * - 위쪽 출입구가 있는 방: 2행 13~16열에 발사대 발판(아래 방에서 올라올 때 도약점)
- * - 아래쪽 출입구가 있는 방: 16행 11,12,17,18열에 착지 턱, 그 위 13~15행은 비워 둔다
+ * 출입구 규격 (기획서 5.3 "출입구 위치는 규격화한다" → 기획자 요청으로 위치를 여러 개로 늘림, QUESTIONS 39).
+ * 방 한 칸(30×17)의 가장자리마다 정해진 "출입구 자리(slot)"가 있고, 템플릿은 쓸 수 있는 자리에 D를 둔다.
+ * 이웃한 두 방은 같은 자리로 이어진다. 좌표는 그 칸 기준(타일).
+ * - 좌우: low = 12~15행(바닥 16행), high = 4~7행(바닥 8행)
+ * - 상하: left = 5~8열, mid = 13~16열, right = 21~24열
+ * - 위 출입구가 있는 칸: 2행의 그 열들에 발사대 발판(=). 아래 방에서 올라올 때의 도약점
+ * - 아래 출입구가 있는 칸: 16행의 그 열 양옆 두 칸씩 착지 턱(#), 그 위 13~15행은 비운다
  */
+export type SideSlot = 'low' | 'high';
+export type VerticalSlot = 'left' | 'mid' | 'right';
+export type DoorSlot = SideSlot | VerticalSlot;
+
 export const DOOR = {
+  side: { low: [12, 13, 14, 15], high: [4, 5, 6, 7] } as Readonly<Record<SideSlot, readonly number[]>>,
+  vertical: { left: [5, 6, 7, 8], mid: [13, 14, 15, 16], right: [21, 22, 23, 24] } as Readonly<Record<VerticalSlot, readonly number[]>>,
+  launchRow: 2,
+  ledgeClearRows: [13, 14, 15],
+  /** 기본 자리 (기존 규격) */
   sideRows: [12, 13, 14, 15],
   verticalCols: [13, 14, 15, 16],
-  launchRow: 2,
-  ledgeCols: [11, 12, 17, 18],
-  ledgeClearRows: [13, 14, 15],
 } as const;
+
+export const SIDE_SLOTS: readonly SideSlot[] = ['low', 'high'];
+export const VERTICAL_SLOTS: readonly VerticalSlot[] = ['left', 'mid', 'right'];
+
+/** 아래 출입구 착지 턱 열 (그 칸 기준) */
+export function ledgeCols(slot: VerticalSlot): number[] {
+  const c = DOOR.vertical[slot];
+  return [c[0]! - 2, c[0]! - 1, c[3]! + 1, c[3]! + 2];
+}
+
+/**
+ * 방 모양 (칸 수 가로×세로)과 레이아웃에서 고를 가중치 (기획자 요청: 긴 복도, 세로 굴, 큰 홀).
+ * 입구 방과 보스 아레나(2×1)는 따로 정한다.
+ */
+export const ROOM_SHAPES: readonly { readonly w: number; readonly h: number; readonly weight: number }[] = [
+  { w: 1, h: 1, weight: 58 },
+  { w: 2, h: 1, weight: 12 },
+  { w: 3, h: 1, weight: 6 },
+  { w: 1, h: 2, weight: 14 },
+  { w: 2, h: 2, weight: 10 },
+];
 
 /** 층별 방 그리드 크기 (기획서 5.3: 1층 7×5, 5층 9×7, 9층 11×7) [가정] */
 export const FLOOR_GRID: readonly (readonly [number, number])[] = [
@@ -34,7 +63,7 @@ export const FLOOR_GRID: readonly (readonly [number, number])[] = [
 ];
 
 export const LAYOUT = {
-  /** 전체 칸 중 일반 방으로 쓰는 비율 [가정] */
+  /** 전체 칸 중 일반 방이 차지하는 칸의 비율 [가정] */
   fillRatio: 0.6,
   /** 스패닝 트리 간선 대비 추가 연결 비율 (루프) [가정] */
   loopRatio: 0.15,
@@ -55,6 +84,7 @@ export const LAYOUT = {
 /** 빨간 던전 구조 (기획서 7.2) [가정] */
 export const RED_LAYOUT = {
   grid: [7, 7] as const,
+  /** 일반 방이 차지하는 칸 수 */
   roomCount: [6, 10] as const,
   newestBias: 0.85,
   loopRatio: 0,
@@ -79,4 +109,6 @@ export const ROOM_RANDOM = {
   trapRoomChance: 0.12,
   /** 층에 제단 이벤트 방이 생길 확률 */
   altarChance: 0.4,
+  /** 좌우로 이어진 두 방 사이 벽을 틀 확률 (양쪽이 모두 빈 높이만, 기획자 요청) */
+  seamOpenChance: 0.75,
 } as const;

@@ -124,7 +124,7 @@ describe('골드와 상점', () => {
     let withShop = 0;
     for (let seed = 0; seed < 200; seed++) {
       const floor = 1 + (seed % 9);
-      const f = generateFloor({ runSeed: seed, floor, kind: 'floor' });
+      const f = generateFloor({ runSeed: seed, floor, kind: 'floor', reachCheck: false });
       if (!f.shop) continue;
       withShop++;
       const room = f.rooms[f.shop.room]!;
@@ -133,11 +133,11 @@ describe('골드와 상점', () => {
       expect(f.altar && f.altar.x === f.shop.x && f.altar.y === f.shop.y).toBeFalsy();
     }
     expect(withShop).toBe(200);
-    expect(generateFloor({ runSeed: 1, floor: 3, kind: 'red' }).shop).toBeNull();
+    expect(generateFloor({ runSeed: 1, floor: 3, kind: 'red', reachCheck: false }).shop).toBeNull();
   });
 
   it('상점은 방을 가 보지 않아도 지도에 표시된다', () => {
-    const f = generateFloor({ runSeed: 11, floor: 2, kind: 'floor' });
+    const f = generateFloor({ runSeed: 11, floor: 2, kind: 'floor', reachCheck: false });
     const ex = new Exploration(f.layout);
     expect(ex.revealed.has(f.shop!.room)).toBe(false);
     const m = mapMarkers({ floor: f, exploration: ex, player: f.entrance, chests: [], altar: null, shop: f.shop, redPortalClosed: false, bossDefeated: false });

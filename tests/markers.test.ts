@@ -5,7 +5,7 @@ import { Exploration } from '../src/core/map/exploration';
 import { mapMarkers, type MarkerInput, type MarkerOptions } from '../src/core/map/markers';
 
 function setup(seed = 3) {
-  const floor = generateFloor({ runSeed: seed, floor: 2, kind: 'floor' });
+  const floor = generateFloor({ runSeed: seed, floor: 2, kind: 'floor', reachCheck: false });
   const exploration = new Exploration(floor.layout);
   exploration.enter(floor.layout.entrance);
   const input: MarkerInput = {

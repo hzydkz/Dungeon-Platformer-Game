@@ -44,6 +44,7 @@ function floorsWith(stats: Stats, n: number, floor = 4) {
       redPortalChanceBonus: stats.redPortalChance,
       trapChanceBonus: stats.trapChance,
       chestChanceMultiplier: stats.chestChance,
+      reachCheck: false,
     }),
   );
 }
@@ -163,7 +164,7 @@ describe('성격 효과 (각각)', () => {
   });
 
   it('신중: 방에 들어가면 인접 방도 공개', () => {
-    const f = generateFloor({ runSeed: 5, floor: 2, kind: 'floor' });
+    const f = generateFloor({ runSeed: 5, floor: 2, kind: 'floor', reachCheck: false });
     const s = withPers('cautious');
     const ex = new Exploration(f.layout);
     ex.enter(f.layout.entrance, s.revealAdjacent > 0);
