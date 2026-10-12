@@ -49,14 +49,16 @@ describe('약도 표식', () => {
     expect(kinds(input, { ...MAP, showUndiscoveredPortals: true })).toContain('exit');
   });
 
-  it('공개되지 않은 방의 상자는 숨기고, 비밀 상자는 열기 전까지 숨긴다', () => {
-    const { input, floor, exploration } = setup(4);
-    const hiddenRoomChest = floor.chests.find((c) => !exploration.revealed.has(c.room));
-    if (hiddenRoomChest) {
-      const shown = mapMarkers(input).filter((m) => m.kind === 'chest');
-      expect(shown.some((m) => m.x === hiddenRoomChest.x && m.y === hiddenRoomChest.y)).toBe(false);
-    }
-    for (const r of floor.rooms) exploration.revealed.add(r.index);
+  it('본 적 없는 칸의 상자는 숨기고, 비밀 상자는 열기 전까지 숨긴다', () => {
+    let seed = 4;
+    while (!setup(seed).floor.chests.some((c) => !c.secret)) seed++;
+    const { input, floor, exploration } = setup(seed);
+    const chest = floor.chests.find((c) => !c.secret)!;
+    const shown = () => mapMarkers(input).some((m) => m.kind === 'chest' && m.x === chest.x && m.y === chest.y);
+    expect(shown()).toBe(false);
+    exploration.markSeen(chest.y * exploration.width + chest.x);
+    expect(shown()).toBe(true);
+    exploration.revealAll();
     const secret = floor.chests.find((c) => c.secret);
     if (secret) {
       const at = (alive: boolean) =>
@@ -66,5 +68,20 @@ describe('약도 표식', () => {
       expect(at(true)).toBe(false);
       expect(at(false)).toBe(true);
     }
+  });
+
+  it('열쇠와 잠긴 문도 그 칸을 본 뒤에 표시된다', () => {
+    for (let seed = 0; seed < 40; seed++) {
+      const { input, floor, exploration } = setup(seed);
+      if (!floor.key) continue;
+      const k = floor.key;
+      const withKey = { ...input, key: { ...k, taken: false } };
+      expect(kinds(withKey)).not.toContain('key');
+      exploration.markSeen(k.y * exploration.width + k.x);
+      expect(kinds(withKey)).toContain('key');
+      expect(kinds({ ...withKey, key: { ...k, taken: true } })).not.toContain('key');
+      return;
+    }
+    throw new Error('열쇠가 있는 층을 찾지 못했다');
   });
 });

@@ -17,10 +17,13 @@ export const MAP = {
   colors: {
     paper: '#e6d7b4',
     paperDark: '#d4c29a',
+    /** 본 적 있는 빈칸 (안 본 곳은 종이색 그대로) */
+    paperSeen: '#f4ebd2',
     ink: '#3e2f20',
     rock: '#bfa97e',
     platform: '#7a6040',
     spike: '#a8402c',
+    vine: '#5f8a3c',
     unvisited: '#9c8a66',
     frame: 0x5a4630,
     boss: 0x8a2a8a,
@@ -43,4 +46,24 @@ export const EXPLORE_FX = {
   /** 이 반지름부터 가장 어둡다 */
   darkOuterRadius: 140,
   darkAlpha: 0.94,
+} as const;
+
+/** 시야와 안개 (기획자 요청: 벽 너머는 안 보이게, 시야를 좁게, 본 곳만 지도에) */
+export const VISION = {
+  /** 시야 반지름 (타일). 화면은 가로 30칸 정도 */
+  radius: 9,
+  /** 보스전 (아레나 전체가 보이게) */
+  bossRadius: 40,
+  /** 어둠 구역 안에서의 시야 반지름 */
+  darkRadius: 5,
+  /** 시야 끝에서 이 칸 수만큼 서서히 어두워진다 */
+  fadeTiles: 3,
+  /** 본 적 있지만 지금 안 보이는 곳의 어둡기 (0~1) */
+  memoryAlpha: 0.62,
+  /** 아직 못 본 곳의 어둡기 */
+  unseenAlpha: 1,
+  /** 몬스터(8~9), 투사체(12)보다 위, 피해 숫자(40)보다 아래 */
+  depth: 35,
+  /** 플레이어가 가만히 있어도 이 간격(초)으로 다시 계산 (문이 열리거나 벽이 부서진 경우) */
+  refreshInterval: 0.25,
 } as const;

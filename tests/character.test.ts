@@ -163,7 +163,7 @@ describe('성격 효과 (각각)', () => {
     expect(traps(s)).toBeGreaterThan(traps(b));
   });
 
-  it('신중: 방에 들어가면 인접 방도 공개', () => {
+  it('신중: 방에 들어가면 인접 방 전체도 지도에 공개 (보통은 본 칸만)', () => {
     const f = generateFloor({ runSeed: 5, floor: 2, kind: 'floor', reachCheck: false });
     const s = withPers('cautious');
     const ex = new Exploration(f.layout);
@@ -171,7 +171,7 @@ describe('성격 효과 (각각)', () => {
     for (const n of ex.neighbors(f.layout.entrance)) expect(ex.revealed.has(n)).toBe(true);
     const ex2 = new Exploration(f.layout);
     ex2.enter(f.layout.entrance, b.revealAdjacent > 0);
-    expect(ex2.revealed.size).toBe(1);
+    expect(ex2.revealed.size).toBe(0);
   });
 
   it('무모: 빨간 던전 보스 아이템 선택지 +1, 받는 피해 +10%', () => {

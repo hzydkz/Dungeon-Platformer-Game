@@ -30,7 +30,7 @@ function hexToRgb(hex: string): [number, number, number] {
 
 /**
  * 약도 (기획서 6장 + 기획자 요청): 평소에는 숨겨 두고 Tab/M/View로 펼친다.
- * 공개된 방의 실제 지형을 양피지에 잉크로 그린 듯 표시하고, 보스/포탈/상자/제단/현재 위치를 표식과 이름으로 보여 준다.
+ * 시야에 들어왔던 칸의 실제 지형을 양피지에 잉크로 그린 듯 표시하고, 보스/포탈/상자/제단/현재 위치를 표식과 이름으로 보여 준다.
  */
 export class SketchMap {
   private readonly root: Phaser.GameObjects.Container;
@@ -179,26 +179,35 @@ export class SketchMap {
     const img = ctx.createImageData(box.w, box.h);
     const c = MAP.colors;
     const ink = hexToRgb(c.ink);
-    const faint = hexToRgb(c.unvisited);
+    const paperSeen = hexToRgb(c.paperSeen);
+    const vine = hexToRgb(c.vine);
     const rock = hexToRgb(c.rock);
     const plat = hexToRgb(c.platform);
     const spike = hexToRgb(c.spike);
     const g = f.grid;
     const solid = (x: number, y: number) => isSolidTile(getTile(g, x, y));
+    // 구역 방의 바닥은 구역 색을 옅게 섞는다
+    const zoneOf = new Map<number, [number, number, number]>();
+    for (const z of src.zones) for (const ri of z.rooms) zoneOf.set(ri, hexToRgb(`#${c.zone[z.kind].toString(16).padStart(6, '0')}`));
+    const paper = hexToRgb(c.paper);
     for (const room of f.rooms) {
       if (!ex.revealed.has(room.index)) continue;
-      const visited = ex.visited.has(room.index);
+      const zc = zoneOf.get(room.index);
+      const zoneTint: [number, number, number] | null = zc ? [0, 1, 2].map((k) => Math.round(paper[k]! * 0.8 + zc[k]! * 0.2)) as [number, number, number] : null;
       for (let y = room.y; y < room.y + room.h; y++) {
         for (let x = room.x; x < room.x + room.w; x++) {
+          // 시야에 들어온 적 있는 칸만 그린다 (기획자 요청)
+          if (!ex.isSeen(x, y)) continue;
           const tile = getTile(g, x, y);
           let col: [number, number, number] | null = null;
           if (isSolidTile(tile)) {
             // 빈칸과 맞닿은 벽만 잉크 선, 안쪽 바위는 연하게 (비밀 벽은 일반 벽과 같게)
             const edge = !solid(x - 1, y) || !solid(x + 1, y) || !solid(x, y - 1) || !solid(x, y + 1);
-            col = edge ? (visited ? ink : faint) : rock;
+            col = edge ? ink : rock;
           } else if (tile === Tile.OneWay) col = plat;
           else if (tile === Tile.Spike) col = spike;
-          if (!col) continue;
+          else if (tile === Tile.Vine) col = vine;
+          else col = zoneTint ?? paperSeen;
           const i = ((y - box.y) * box.w + (x - box.x)) * 4;
           img.data[i] = col[0];
           img.data[i + 1] = col[1];
@@ -255,7 +264,7 @@ export class SketchMap {
       li++;
     };
     const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
-    // 구역: 공개된 방을 구역 색으로 칠하고 첫 방에 이름
+    // 구역: 바닥 색은 지형 그림에서, 여기서는 본 적 있는 첫 방에 이름
     const ZONE_LABEL = { nest: '둥지', dark: '어둠', trap: '함정' } as const;
     for (const z of src.zones) {
       const col = c.zone[z.kind];
@@ -264,7 +273,6 @@ export class SketchMap {
         if (!src.exploration.revealed.has(ri)) continue;
         const r = f.rooms[ri]!;
         const [x0, y0] = this.toScreen(r.x, r.y);
-        g.fillStyle(col, 0.18).fillRect(x0, y0, r.w * this.scale, r.h * this.scale);
         if (!named) {
           named = true;
           label({ kind: 'player', x: 0, y: 0, label: ZONE_LABEL[z.kind], spent: false }, x0 + 2, y0 + 6, hex(col));

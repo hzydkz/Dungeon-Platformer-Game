@@ -21,6 +21,8 @@ import { addXp, killXp, xpToNext } from '../core/level';
 import type { ItemInstance } from '../data/items';
 import { secretHintVisible } from '../core/secret';
 import { Exploration } from '../core/map/exploration';
+import { Fog } from './Fog';
+import { VISION } from '../config/map';
 import type { MarkerInput } from '../core/map/markers';
 import { Rng, deriveSeed } from '../core/rng';
 import type { RunState } from '../core/run';
@@ -90,6 +92,7 @@ export type BossFightState = 'waiting' | 'fighting' | 'defeated';
 export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, MonsterWorld, BossWorld, ItemReceiver {
   floorData!: GeneratedFloor;
   exploration!: Exploration;
+  protected fog!: Fog;
   currentRoom = -1;
   playerTile: TilePos = { x: 0, y: 0 };
   label = '';
@@ -208,6 +211,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.setupExploration();
     this.setupShop();
     this.setupExploreFeatures();
+    this.fog = new Fog(this, this.grid, this.exploration);
 
     // 보스전 외에는 방 경계가 아니라 층 전체를 부드럽게 따라간다
     const cam = this.cameras.main;
@@ -1025,11 +1029,31 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     };
   }
 
-  /** 화면에 보인 출구/빨간 포탈을 발견 처리 (약도에 표시) */
+  /** 시야 반지름 (타일): 보스전은 아레나 전체, 어둠 구역은 좁게 */
+  protected visionRadius(): number {
+    if (this.bossState === 'fighting') return VISION.bossRadius;
+    const dark = this.floorData.zones.some((z) => z.kind === 'dark' && z.rooms.includes(this.currentRoom));
+    return dark ? VISION.darkRadius : VISION.radius;
+  }
+
+  /** 시야 계산, 안개 갱신, 안 보이는 몬스터 숨기기 (기획자 요청) */
+  protected updateVision(dt: number): void {
+    const s = DISPLAY.tileSize;
+    const tx = Math.floor(this.player.x / s);
+    let ty = Math.floor((this.player.y - 4) / s);
+    if (isSolidTile(getTile(this.grid, tx, ty))) ty = Math.floor((this.player.y + 8) / s);
+    this.fog.update(dt, tx, ty, this.visionRadius());
+    for (const m of this.monsters) {
+      if (!m.alive) continue;
+      m.setVisible(this.fog.isVisible(Math.floor(m.x / s), Math.floor((m.y - 4) / s)));
+    }
+  }
+
+  /** 시야에 들어온 출구/빨간 포탈을 발견 처리 (약도에 표시) */
   protected discoverPortals(): void {
-    const v = this.cameras.main.worldView;
+    const s = DISPLAY.tileSize;
     for (const p of this.portals) {
-      if ((p.kind === 'exit' || p.kind === 'red') && v.contains(p.x, p.y - 16)) this.exploration.discoveredPortals.add(p.kind);
+      if ((p.kind === 'exit' || p.kind === 'red') && this.fog.isVisible(Math.floor(p.x / s), Math.floor((p.y - 16) / s))) this.exploration.discoveredPortals.add(p.kind);
     }
   }
 
@@ -1081,7 +1105,10 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
   protected handleDebug(): void {
     if (!DEBUG.enabled) return;
     const c = this.controls;
-    if (c.debugPressed('revealMap')) this.exploration.revealAll();
+    if (c.debugPressed('revealMap')) {
+      this.exploration.revealAll();
+      this.fog.invalidate();
+    }
     if (c.debugPressed('invincible')) {
       this.combat.godMode = !this.combat.godMode;
       this.floatText(this.player.x, this.player.y - 20, this.combat.godMode ? '무적 ON' : '무적 OFF', '#ffffff');
@@ -1124,6 +1151,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.explore.update(dt, this.cameras.main);
     this.updateSecretHint(dt);
     this.updateRoom();
+    this.updateVision(dt);
     this.discoverPortals();
     this.checkBoss();
     this.handlePortals(input);

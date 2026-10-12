@@ -3,9 +3,9 @@
  * - 보스: 처음부터 표시
  * - 입구 포탈: 항상 표시 (출발점)
  * - 출구/빨간 포탈: 화면에 한 번 보인 뒤부터 (설정)
- * - 상자/제단: 공개된 방에 있을 때, 연 상자/쓴 제단은 흐리게
+ * - 상자/제단: 그 칸을 본 적이 있을 때 (시야, vision.ts), 연 상자/쓴 제단은 흐리게
  * - 상점: 처음부터 표시 (기획자 요청)
- * - 지름길 문/잠긴 문: 양쪽 방 중 하나가 공개되면, 열쇠: 그 방이 공개되면 (주운 뒤에는 숨김)
+ * - 지름길 문/잠긴 문/열쇠: 그 칸을 본 적이 있을 때 (열쇠는 주운 뒤에는 숨김)
  * - 현재 위치
  */
 import { MAP } from '../../config/map';
@@ -26,7 +26,7 @@ export interface MapMarker {
 
 export interface MarkerInput {
   readonly floor: Pick<GeneratedFloor, 'entrance' | 'exitPortal' | 'redPortal' | 'boss' | 'rooms' | 'kind'>;
-  readonly exploration: Pick<Exploration, 'revealed' | 'discoveredPortals'>;
+  readonly exploration: Pick<Exploration, 'isSeen' | 'revealed' | 'discoveredPortals'>;
   readonly player: { readonly x: number; readonly y: number };
   readonly chests: readonly { readonly x: number; readonly y: number; readonly room: number; readonly alive: boolean; readonly secret: boolean }[];
   readonly altar: { readonly x: number; readonly y: number; readonly room: number; readonly used: boolean } | null;
@@ -65,18 +65,18 @@ export function mapMarkers(input: MarkerInput, options: MarkerOptions = MAP): Ma
   }
   for (const c of input.chests) {
     // 비밀 상자는 열기 전에는 표시하지 않는다
-    if (!ex.revealed.has(c.room) || (c.secret && c.alive)) continue;
+    if (!ex.isSeen(c.x, c.y) || (c.secret && c.alive)) continue;
     out.push({ kind: 'chest', x: c.x, y: c.y, label: '상자', spent: !c.alive });
   }
-  if (input.altar && ex.revealed.has(input.altar.room)) {
+  if (input.altar && ex.isSeen(input.altar.x, input.altar.y)) {
     out.push({ kind: 'altar', x: input.altar.x, y: input.altar.y, label: '제단', spent: input.altar.used });
   }
   if (input.shop) out.push({ kind: 'shop', x: input.shop.x, y: input.shop.y, label: '상점', spent: false });
   for (const d of input.doors ?? []) {
-    if (!d.rooms.some((r) => ex.revealed.has(r))) continue;
+    if (!ex.isSeen(d.x, d.y)) continue;
     out.push({ kind: d.kind, x: d.x, y: d.y, label: d.kind === 'gate' ? (d.opened ? '지름길' : '지름길(닫힘)') : d.opened ? '열린 문' : '잠긴 문', spent: d.opened });
   }
-  if (input.key && !input.key.taken && ex.revealed.has(input.key.room)) out.push({ kind: 'key', x: input.key.x, y: input.key.y, label: '열쇠', spent: false });
+  if (input.key && !input.key.taken && ex.isSeen(input.key.x, input.key.y)) out.push({ kind: 'key', x: input.key.x, y: input.key.y, label: '열쇠', spent: false });
   out.push({ kind: 'player', x: input.player.x, y: input.player.y, label: '현재 위치', spent: false });
   return out;
 }
