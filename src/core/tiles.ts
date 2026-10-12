@@ -13,6 +13,8 @@ export const Tile = {
   Gate: 6,
   /** 잠긴 문: 그 층의 열쇠로 연다 */
   Lock: 7,
+  /** 넝쿨: 막히지 않은 칸. ↑로 붙잡아 오르내린다 */
+  Vine: 8,
 } as const;
 export type TileId = (typeof Tile)[keyof typeof Tile];
 
@@ -24,6 +26,10 @@ export function isSolidTile(t: number): boolean {
 /** 위에서만 밟을 수 있는 타일 */
 export function isOneWayTile(t: number): boolean {
   return t === Tile.OneWay;
+}
+
+export function isVineTile(t: number): boolean {
+  return t === Tile.Vine;
 }
 
 export function isHazardTile(t: number): boolean {
@@ -75,6 +81,8 @@ export function basicCharToTile(ch: string): TileId {
       return Tile.Spike;
     case 'S':
       return Tile.Breakable;
+    case '|':
+      return Tile.Vine;
     default:
       return Tile.Empty;
   }

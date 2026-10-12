@@ -11,7 +11,7 @@ export interface BuiltTilemap {
 }
 
 /**
- * TileGrid로 Phaser 타일맵을 만든다. 타일셋 이미지는 [빈칸, 벽, 단방향, 가시, 부서지는 벽, 봉쇄, 지름길 문, 잠긴 문] 순서.
+ * TileGrid로 Phaser 타일맵을 만든다. 타일셋 이미지는 [빈칸, 벽, 단방향, 가시, 부서지는 벽, 봉쇄, 지름길 문, 잠긴 문, 넝쿨] 순서. 넝쿨은 충돌이 없다.
  */
 export function buildTilemap(scene: Phaser.Scene, grid: TileGrid, tilesetKey: string): BuiltTilemap {
   const data: number[][] = [];

@@ -14,6 +14,16 @@ export const COMBAT = {
     spikeDamage: 12,
     /** 아래 공격이 적에 맞으면 튀어 오르는 속도 (px/s) */
     pogoVelocity: 260,
+    /**
+     * 공격 판정 보정 (기획자 피드백: 판정이 너무 박하다).
+     * 근접 옆 공격은 머리 위부터 발밑까지 덮고 몸 뒤쪽 조금부터 시작, 판정 유지 시간 하한,
+     * 적의 피격 영역은 사방으로 hitMargin만큼 넓게 본다(투사체 포함).
+     */
+    meleeTop: 15,
+    meleeBottom: 14,
+    meleeBehind: 4,
+    minActive: 0.12,
+    hitMargin: 4,
   },
   monster: {
     /** 피격 경직 (초) */

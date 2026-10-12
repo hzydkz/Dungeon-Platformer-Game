@@ -1,8 +1,8 @@
 import Phaser from 'phaser';
-import { LEDGE_GRAB, MOVEMENT, PLAYER_SIZE } from '../config/movement';
+import { LEDGE_GRAB, MOVEMENT, PLAYER_SIZE, VINE } from '../config/movement';
 import { PlayerMotor } from '../core/movement/motor';
 import { findLedgeGrab, isLedgeCorner } from '../core/movement/ledge';
-import { isOneWayTile } from '../core/tiles';
+import { isOneWayTile, isVineTile } from '../core/tiles';
 import { DISPLAY } from '../config/display';
 import type { InputFrame } from '../input/Controls';
 
@@ -29,6 +29,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private regrabAt = 0;
   /** 이전 프레임의 몸 윗변 (모서리 통과 판정) */
   private prevBodyTop: number | null = null;
+  /** 붙잡은 넝쿨 (열, 맨 위/아래 행) */
+  private vine: { col: number; top: number; bottom: number } | null = null;
 
   constructor(
     scene: Phaser.Scene,
@@ -56,13 +58,98 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     return this.arcadeBody.blocked.down;
   }
 
-  /** 모서리에 매달려 있는가 */
+  /** 모서리에 매달려 있거나 넝쿨을 타고 있는가 (공격/스킬 불가) */
   get hanging(): boolean {
-    return this.hang !== null;
+    return this.hang !== null || this.vine !== null;
+  }
+
+  get climbing(): boolean {
+    return this.vine !== null;
+  }
+
+  private isVine(tx: number, ty: number): boolean {
+    return isVineTile(this.tileAt(tx, ty));
+  }
+
+  /** 넝쿨에서 내린다 */
+  releaseVine(): void {
+    if (!this.vine) return;
+    this.vine = null;
+    this.arcadeBody.setAllowGravity(true);
+  }
+
+  /** ↑(공중이면 ↓도)를 누른 채 몸 중심이 넝쿨 칸에 있으면 붙잡는다 */
+  private tryVine(input: InputFrame): boolean {
+    const wantUp = input.moveY < 0;
+    const wantDown = input.moveY > 0 && !this.onGround;
+    if (!wantUp && !wantDown) return false;
+    const body = this.arcadeBody;
+    const s = DISPLAY.tileSize;
+    const cx = body.center.x;
+    const col = Math.floor(cx / s);
+    if (Math.abs(cx - (col * s + s / 2)) > VINE.grabReach) return false;
+    const feetRow = Math.floor(body.bottom / s);
+    const lowRow = Math.floor((body.bottom - 1) / s);
+    const hit = [feetRow, lowRow, Math.floor((body.top + 2) / s)].find((r) => this.isVine(col, r));
+    if (hit === undefined) return false;
+    let top = hit;
+    while (this.isVine(col, top - 1)) top--;
+    let bottom = hit;
+    while (this.isVine(col, bottom + 1)) bottom++;
+    // 위로 오를 때 이미 맨 위면 붙잡지 않는다 (넝쿨 꼭대기 옆 턱에 서 있을 때 계속 붙잡히지 않게)
+    if (wantUp && this.onGround && body.bottom <= top * s + 0.5) return false;
+    this.vine = { col, top, bottom };
+    this.motor.reset();
+    body.setAllowGravity(false);
+    body.setVelocity(0, 0);
+    return true;
+  }
+
+  /** 넝쿨 타기. 계속 타고 있으면 true */
+  private tickVine(input: InputFrame, locked: boolean): boolean {
+    const v = this.vine;
+    if (!v) return false;
+    const body = this.arcadeBody;
+    const s = DISPLAY.tileSize;
+    if (locked) {
+      this.releaseVine();
+      return false;
+    }
+    if (input.jumpPressed) {
+      this.releaseVine();
+      const moveX = Math.max(-1, Math.min(1, input.moveX));
+      body.setVelocity(moveX * MOVEMENT.runSpeed * this.motor.speedMultiplier, input.downHeld ? 0 : -MOVEMENT.jumpVelocity * VINE.jumpMultiplier);
+      if (moveX !== 0) this.facing = moveX > 0 ? 1 : -1;
+      return false;
+    }
+    // 옆으로만 누르면 내린다 (위/아래와 함께 누르면 계속 오른다)
+    if (input.moveX !== 0 && input.moveY === 0) {
+      this.releaseVine();
+      body.setVelocityX(input.moveX * MOVEMENT.runSpeed * this.motor.speedMultiplier);
+      this.facing = input.moveX > 0 ? 1 : -1;
+      return false;
+    }
+    const minFeet = v.top * s;
+    const maxFeet = (v.bottom + 1) * s;
+    // 아래로 내려가다 바닥에 닿았거나 넝쿨 아래 끝을 지나면 놓는다
+    if ((input.moveY > 0 && this.onGround) || body.bottom > maxFeet + 1) {
+      this.releaseVine();
+      return false;
+    }
+    let vy = input.moveY * VINE.climbSpeed;
+    if (vy < 0 && body.bottom + vy / 60 < minFeet) {
+      vy = 0;
+      if (body.bottom < minFeet) body.y = minFeet - body.height;
+    }
+    // 몸을 넝쿨 가운데로
+    const targetX = v.col * s + s / 2;
+    body.setVelocity((targetX - body.center.x) * 12, vy);
+    return true;
   }
 
   /** 매달리기를 풀고 중력을 되돌린다. 속도는 호출 측이 정한다 */
   releaseHang(now = this.scene.time.now / 1000): void {
+    this.releaseVine();
     if (!this.hang) return;
     this.hang = null;
     this.regrabAt = now + LEDGE_GRAB.regrabCooldown;
@@ -153,6 +240,19 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const now = this.scene.time.now / 1000;
     const body = this.arcadeBody;
     const locked = now < this.controlLockUntil;
+    if (this.vine) {
+      const still = this.tickVine(input, locked);
+      if (still || (!locked && (input.jumpPressed || input.moveX !== 0))) {
+        this.prevBodyTop = body.top;
+        this.setFlipX(this.facing < 0);
+        this.updateAnimation();
+        return;
+      }
+    } else if (!locked && !this.hang && this.tryVine(input)) {
+      this.prevBodyTop = body.top;
+      this.updateAnimation();
+      return;
+    }
     if (this.hang) {
       const stillHanging = this.tickHang(input, now, locked);
       // 매달린 채로, 또는 점프/↓로 막 놓았으면 이번 프레임 이동은 끝 (속도는 tickHang이 정했다)
@@ -204,7 +304,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private updateAnimation(): void {
     if (this.scene.time.now < this.actionLockUntil) return;
     const body = this.arcadeBody;
-    if (this.hang) this.playAction(this.scene.anims.exists(`${this.textureKey}_hang`) ? 'hang' : 'jump');
+    if (this.vine) this.playAction(this.scene.anims.exists(`${this.textureKey}_climb`) ? 'climb' : 'jump');
+    else if (this.hang) this.playAction(this.scene.anims.exists(`${this.textureKey}_hang`) ? 'hang' : 'jump');
     else if (!this.onGround) this.playAction(body.velocity.y < 0 ? 'jump' : 'fall');
     else if (Math.abs(body.velocity.x) > 1) this.playAction('run');
     else this.playAction('idle');

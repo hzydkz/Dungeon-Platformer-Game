@@ -338,7 +338,7 @@ function widenSeams(grid: TileGrid, layout: Layout, rng: Rng): number {
 
 type Assembled = Omit<GeneratedFloor, 'seed' | 'usedSeed' | 'attempts'>;
 
-function assemble(opts: FloorGenOptions, lib: TemplateLibrary, rng: Rng, layout: Layout, widen: boolean, plan: ExplorePlan): Assembled | null {
+function assemble(opts: FloorGenOptions, lib: TemplateLibrary, rng: Rng, layout: Layout, widen: boolean, plan: ExplorePlan, trimPads = widen): Assembled | null {
   const RW = ROOM.widthTiles;
   const RH = ROOM.heightTiles;
   const grid = createGrid(layout.gridW * RW, layout.gridH * RH, Tile.Wall);
@@ -385,6 +385,14 @@ function assemble(opts: FloorGenOptions, lib: TemplateLibrary, rng: Rng, layout:
       trapOn: trap,
       secretActive: secretRooms.has(r.index),
     });
+    // 쓰지 않는 위 출입구의 발사대 발판은 지운다 (방이 지저분해 보이지 않게, 층 전체 검증으로 확인).
+    // 잠긴 방/숨은 방 안은 문이 닫힌 상태의 층 검증에 들어가지 않으므로 그대로 둔다
+    if (trimPads && !hiddenRoom && !vaultRoom) {
+      for (const c of t.caps) {
+        if (c.dir !== 'up' || open.some((o) => o.dir === 'up' && o.seg === c.seg && o.slot === c.slot)) continue;
+        for (const col of DOOR.vertical[c.slot as VerticalSlot]) setTile(tg, c.seg * RW + col, DOOR.launchRow, Tile.Empty);
+      }
+    }
     for (let y = 0; y < tg.height; y++) {
       for (let x = 0; x < tg.width; x++) {
         const tile = getTile(tg, x, y);
@@ -609,6 +617,47 @@ export function floorReachErrors(f: Assembled): string[] {
   return errors;
 }
 
+/**
+ * 잠긴 방/숨은 방 안 도달성: 층 전체 검증은 문이 닫힌 상태라 이 방들의 안쪽을 보지 않는다.
+ * 그 방(+여유 2칸)만 잘라 특별한 문을 연 상태로, 문 근처에서 방 안의 목표에 가고 돌아올 수 있는지 본다.
+ * (템플릿 검증은 모든 출입구를 연 상태라, 출입구 하나만 열린 방에서는 출입구 자리 디딤돌이 없어 못 가는 곳이 생길 수 있다)
+ */
+export function sealedRoomErrors(f: Assembled): string[] {
+  const errors: string[] = [];
+  const check = (room: number, doorKind: SpecialDoor['kind'], targets: readonly TilePos[], name: string) => {
+    const door = f.specialDoors.find((d) => d.kind === doorKind);
+    const r = f.rooms[room];
+    if (!door || !r || targets.length === 0) return;
+    const m = 3;
+    const x0 = Math.max(0, r.x - m);
+    const y0 = Math.max(0, r.y - m);
+    const x1 = Math.min(f.grid.width - 1, r.x + r.w - 1 + m);
+    const y1 = Math.min(f.grid.height - 1, r.y + r.h - 1 + m);
+    const sub = createGrid(x1 - x0 + 1, y1 - y0 + 1, Tile.Wall);
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) setTile(sub, x - x0, y - y0, getTile(f.grid, x, y) as never);
+    for (const t of door.tiles) setTile(sub, t.x - x0, t.y - y0, Tile.Empty);
+    const g = buildReachGraph(sub, REACH_PARAMS);
+    const cell = (p: TilePos) => (p.y - y0) * sub.width + (p.x - x0);
+    // 출발: 문 타일과 그 둘레의 서 있을 수 있는 칸
+    const starts: number[] = [];
+    for (const t of door.tiles) for (let dy = -1; dy <= 1; dy++) for (let dx = -2; dx <= 2; dx++) starts.push(cell({ x: t.x + dx, y: t.y + dy }));
+    const reach = reachableFrom(g, starts);
+    const back = canReach(g, starts);
+    for (const t of targets) {
+      const n = g.nodeOf[cell(t)] ?? -1;
+      if (n < 0 || !reach.has(n)) errors.push(`${name} 안 (${t.x},${t.y}) 도달 불가`);
+    }
+    for (const n of reach) {
+      if (back.has(n)) continue;
+      errors.push(`${name} 안에서 문으로 돌아올 수 없음`);
+      break;
+    }
+  };
+  if (f.vault) check(f.vault.room, 'lock', [f.vault.chest, ...f.chests.filter((c) => c.room === f.vault!.room)], '잠긴 방');
+  if (f.hiddenRoom >= 0) check(f.hiddenRoom, 'secret', f.chests.filter((c) => c.room === f.hiddenRoom), '숨은 방');
+  return errors;
+}
+
 /** 디버그/테스트용: 마지막 생성에서 시도마다 실패한 이유 */
 export const generationLog: string[] = [];
 
@@ -633,19 +682,24 @@ export function generateFloor(opts: FloorGenOptions, lib: TemplateLibrary = load
     const plan = opts.kind === 'floor' ? planExploration(rng, layout, opts.floor) : NO_PLAN;
     // 같은 레이아웃으로 경계를 튼 층 → 실패하면 트지 않은 층 (템플릿 검증만으로 이동이 보장된다)
     const assembleSeed = rng.int(0, 0x7fffffff);
-    for (const widen of [true, false]) {
-      const floor = assemble(opts, lib, new Rng(assembleSeed), layout, widen, plan);
+    // 경계 트기 + 발사대 정리 → 발사대 정리만 → 둘 다 안 함 (마지막은 템플릿 검증만으로 이동이 보장된다)
+    for (const [widen, trim] of [
+      [true, true],
+      [false, true],
+      [false, false],
+    ] as const) {
+      const floor = assemble(opts, lib, new Rng(assembleSeed), layout, widen, plan, trim);
       if (!floor) {
         lastErrors = ['템플릿 배정 실패'];
         generationLog.push(`${attempt}: 템플릿 배정 실패`);
         break;
       }
       const errors = validateFloor(floor);
-      if (errors.length === 0 && reachCheck) errors.push(...floorReachErrors(floor));
+      if (errors.length === 0 && reachCheck) errors.push(...floorReachErrors(floor), ...sealedRoomErrors(floor));
       if (errors.length === 0) return { ...floor, seed, usedSeed, attempts: attempt + 1 };
       lastErrors = errors;
-      generationLog.push(`${attempt}${widen ? 'w' : ''}: ${errors[0]}`);
-      if (!floor.widened) break;
+      generationLog.push(`${attempt}${widen ? 'w' : ''}${trim ? 't' : ''}: ${errors[0]}`);
+      if (!trim) break;
     }
   }
   throw new Error(`층 생성 실패 (${opts.kind} ${opts.floor}층, 시드 ${seed}): ${lastErrors.join(', ')}`);

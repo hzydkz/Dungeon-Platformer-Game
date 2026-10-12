@@ -80,6 +80,16 @@ function makeTileset(scene: Phaser.Scene, e: TilesetEntry): void {
         ctx.fillRect(ox + 3, 6, s - 6, 1);
         ctx.fillRect(ox + 3, 11, s - 6, 1);
         break;
+      case 'vine': {
+        // 넝쿨: 칸 가운데 세로 줄기와 잎 (위아래 칸과 이어지게)
+        ctx.fillStyle = shade(color, 0.7);
+        ctx.fillRect(ox + 7, 0, 2, s);
+        ctx.fillStyle = color;
+        ctx.fillRect(ox + 4, 3, 3, 2);
+        ctx.fillRect(ox + 9, 9, 3, 2);
+        ctx.fillRect(ox + 5, 13, 2, 2);
+        break;
+      }
       case 'spike':
         ctx.fillStyle = color;
         for (let k = 0; k < 4; k++) {

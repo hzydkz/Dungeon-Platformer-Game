@@ -5,7 +5,7 @@
  * 크기는 방 칸(30×17)의 정수배 (1×1, 2×1, 3×1, 1×2, 2×2 등).
  * 문자: # 벽, . 빈칸, = 단방향 발판, ^ 가시, M 몬스터 스폰, C 상자, P 포탈 후보(특수 위치), D 출입구,
  *       o 선택적 발판(방마다 한꺼번에 켜짐/꺼짐), t 함정 가시(함정 방에서만), S 비밀 벽(부서짐),
- *       c 비밀 상자(비밀 벽이 활성일 때만), b 보스 스폰(아레나 전용)
+ *       c 비밀 상자(비밀 벽이 활성일 때만), b 보스 스폰(아레나 전용), | 넝쿨(오르내릴 수 있는 칸)
  *
  * 출입구: 가장자리의 각 칸 구간(seg)마다 규격 자리(config/generation.ts의 DOOR)가 있고, 그 자리가 모두 D면
  * 그 방향·구간·자리로 이어질 수 있다(DoorCap). 층을 만들 때 실제로 쓰는 출입구만 열고 나머지 D는 벽이 된다.
@@ -71,7 +71,7 @@ export interface RoomTemplate {
   readonly flipped: boolean;
 }
 
-const KNOWN = new Set('#.=^MCPDotScb'.split(''));
+const KNOWN = new Set('#.=^MCPDotScb|'.split(''));
 
 /** 출입구 자리의 타일 좌표 목록 (템플릿 기준) */
 export function capTiles(t: { width: number; height: number }, c: DoorCap): [number, number][] {
@@ -286,6 +286,9 @@ export function resolveTemplate(t: RoomTemplate, o: ResolveOptions): { grid: Til
           break;
         case '^':
           tile = Tile.Spike;
+          break;
+        case '|':
+          tile = Tile.Vine;
           break;
         case 'D':
           tile = openTiles.has(y * t.width + x) ? Tile.Empty : Tile.Wall;

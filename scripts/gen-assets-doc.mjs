@@ -14,7 +14,7 @@ for (const s of m.spritesheets) {
 }
 lines.push('', '### 타일셋', '', '| 키 | 파일 | 규격 |', '|---|---|---|');
 for (const t of m.tilesets) {
-  lines.push(`| \`${t.key}\` | \`${t.file}\` | ${t.tileSize}px 타일 8칸 가로: [빈칸, 벽, 단방향 블록(벽보다 밝은 꽉 찬 정사각형, 윗면만 밟힘), 가시, 부서지는 벽, 봉쇄, 지름길 문, 잠긴 문] |`);
+  lines.push(`| \`${t.key}\` | \`${t.file}\` | ${t.tileSize}px 타일 9칸 가로: [빈칸, 벽, 단방향 블록(벽보다 밝은 꽉 찬 정사각형, 윗면만 밟힘), 가시, 부서지는 벽, 봉쇄, 지름길 문, 잠긴 문, 넝쿨(투명 배경, 위아래로 이어짐)] |`);
 }
 lines.push('', '### 이미지', '', '| 키 | 파일 | 크기 |', '|---|---|---|');
 for (const i of m.images) lines.push(`| \`${i.key}\` | \`${i.file}\` | ${i.width}×${i.height} |`);

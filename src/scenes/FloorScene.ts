@@ -308,7 +308,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.physics.add.collider(this.playerShots, this.layer, (shot) => this.expireShot(shot as Projectile), shotVsTile);
     this.physics.add.collider(this.enemyShots, this.layer, (shot) => (shot as Projectile).destroy(), shotVsTile);
 
-    this.physics.add.overlap(this.playerShots, this.monsterGroup, (shot, mon) => this.shotHits(shot as Projectile, mon as Monster));
+    // 플레이어 투사체의 적 판정은 updatePlayerShots에서 (보스 포함, 판정 보정)
     this.physics.add.overlap(this.player, this.enemyShots, (_p, shot) => {
       const p = shot as Projectile;
       if (this.combat.hurt(p.damage, p.x, '적의 탄환') > 0 || !this.combat.invulnerable) p.destroy();
@@ -817,12 +817,22 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     });
   }
 
-  private shotHits(shot: Projectile, m: Monster): void {
-    if (!shot.active || !m.alive || !m.awake) return;
-    if (shot.hitSet.has(m)) return;
-    shot.hitSet.add(m);
-    this.damageTarget(m, shot.damage, shot.x);
-    if (!shot.pierce) this.expireShot(shot);
+  /** 플레이어 투사체 → 몬스터/보스/상자. 적의 피격 영역을 판정 보정만큼 넓게 본다 */
+  protected updatePlayerShots(): void {
+    const m = COMBAT.player.hitMargin;
+    for (const shot of [...(this.playerShots.getChildren() as Projectile[])]) {
+      if (!shot.active) continue;
+      const b = shot.body as Phaser.Physics.Arcade.Body;
+      const sr = new Phaser.Geom.Rectangle(b.x - m, b.y - m, b.width + m * 2, b.height + m * 2);
+      for (const t of this.targets()) {
+        if (!shot.active) break;
+        if (!t.alive || shot.hitSet.has(t)) continue;
+        if (!Phaser.Geom.Intersects.RectangleToRectangle(sr, t.hitRect(this.tmpRect))) continue;
+        shot.hitSet.add(t);
+        this.damageTarget(t, shot.damage, shot.x);
+        if (!shot.pierce) this.expireShot(shot);
+      }
+    }
   }
 
   protected expireShot(shot: Projectile): void {
@@ -1107,6 +1117,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
       this.trackMonsterRoom(m);
     }
     for (const p of this.playerShots.getChildren() as Projectile[]) p.tick(dt);
+    this.updatePlayerShots();
     for (const p of this.enemyShots.getChildren() as Projectile[]) p.tick(dt);
     if (this.boss && this.bossState === 'fighting') this.boss.tick(dt, this);
     this.updateEscapeTimer(dt);

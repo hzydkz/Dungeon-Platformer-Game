@@ -113,7 +113,7 @@ export class PlayerCombat {
     this.host.fx.sound('sfx_attack', 0.4);
     const dir = this.aim(input);
     if (a.kind === 'melee') {
-      this.swing = { attack: a, dir, until: this.now + a.active, hit: new Set(), pogoDone: false };
+      this.swing = { attack: a, dir, until: this.now + Math.max(a.active, COMBAT.player.minActive), hit: new Set(), pogoDone: false };
       const r = this.swingRect(this.swing);
       const angle = dir === 'up' ? -Math.PI / 2 : dir === 'down' ? Math.PI / 2 : this.player.facing > 0 ? 0 : Math.PI;
       this.host.fx.slash(r.centerX, r.centerY, angle, this.player.facing < 0 && dir === 'side');
@@ -143,14 +143,19 @@ export class PlayerCombat {
   private swingRect(s: Swing): Phaser.Geom.Rectangle {
     const p = this.player;
     const a = s.attack;
+    const c = COMBAT.player;
     if (s.dir === 'side') {
-      const x = p.facing > 0 ? p.x + 3 : p.x - 3 - a.width;
-      return this.rect.setTo(x, p.y - a.height / 2 - 1, a.width, a.height);
+      // 몸 뒤쪽 조금부터 앞으로 (몸에 붙은 적도 맞는다), 세로는 머리 위부터 발밑까지 + 역할 판정 높이 중 큰 쪽
+      const reach = a.width + 5 + c.meleeBehind;
+      const top = Math.min(p.y - c.meleeTop, p.y - a.height / 2 - 1);
+      const bottom = Math.max(p.y + c.meleeBottom, p.y + a.height / 2 - 1);
+      const x = p.facing > 0 ? p.x - c.meleeBehind : p.x + c.meleeBehind - reach;
+      return this.rect.setTo(x, top, reach, bottom - top);
     }
-    const w = a.height + 6;
-    const h = a.width - 4;
-    if (s.dir === 'up') return this.rect.setTo(p.x - w / 2, p.y - 12 - h, w, h);
-    return this.rect.setTo(p.x - w / 2, p.y + 10, w, h);
+    const w = Math.max(a.height + 6, 22);
+    const h = a.width + 2;
+    if (s.dir === 'up') return this.rect.setTo(p.x - w / 2, p.y - 10 - h, w, h + 4);
+    return this.rect.setTo(p.x - w / 2, p.y + 6, w, h + 4);
   }
 
   private updateSwing(): void {
@@ -163,7 +168,9 @@ export class PlayerCombat {
     const r = this.swingRect(s);
     for (const t of this.host.targets()) {
       if (!t.alive || s.hit.has(t)) continue;
-      if (!Phaser.Geom.Intersects.RectangleToRectangle(r, t.hitRect(this.tmp))) continue;
+      // 적의 피격 영역을 판정 보정만큼 넓게
+      const tr = Phaser.Geom.Rectangle.Inflate(t.hitRect(this.tmp), COMBAT.player.hitMargin, COMBAT.player.hitMargin);
+      if (!Phaser.Geom.Intersects.RectangleToRectangle(r, tr)) continue;
       s.hit.add(t);
       this.host.damageTarget(t, s.attack.damage, this.player.x);
       if (s.dir === 'down' && !s.pogoDone) {
@@ -248,7 +255,7 @@ export class PlayerCombat {
             const r = t.hitRect(this.tmp);
             const nx = Math.max(r.left, Math.min(cx, r.right));
             const ny = Math.max(r.top, Math.min(cy, r.bottom));
-            if (Math.hypot(nx - cx, ny - cy) <= sk.radius) this.host.damageTarget(t, sk.damage, cx);
+            if (Math.hypot(nx - cx, ny - cy) <= sk.radius + COMBAT.player.hitMargin) this.host.damageTarget(t, sk.damage, cx);
           }
           this.player.playAction('skill', false);
         }

@@ -286,7 +286,7 @@ function findProblem(spec: RoomSpec, cv: Canvas, a: Analysis): Problem | null {
 }
 
 /** from 집합 중 목표에 가장 가까운 칸에서 목표까지 발판 사다리를 놓고 길을 판다 */
-function bridge(rng: Rng, cv: Canvas, a: Analysis, pr: Problem): void {
+function bridge(rng: Rng, cv: Canvas, a: Analysis, pr: Problem, depth = 0): void {
   const [tx, ty] = pr.to;
   let sx = -1;
   let sy = -1;
@@ -310,21 +310,37 @@ function bridge(rng: Rng, cv: Canvas, a: Analysis, pr: Problem): void {
   const platform = (cx: number, row: number) => {
     for (let x = cx - 2; x <= cx + 2; x++) {
       if (!cv.inner(x, row) || cv.isLocked(x, row)) continue;
-      const ch = cv.get(x, row);
-      if (ch === '.' || ch === '#') cv.set(x, row, '=');
+      if (cv.get(x, row) === '.') cv.set(x, row, '=');
     }
   };
   if (ty >= sy) {
     // 목표가 같은 높이거나 아래: 사이를 파서 걸어가거나 떨어질 수 있게
     carveBox(sx, Math.min(sy, ty) - 2, tx, Math.max(sy, ty));
-    // 너무 넓은 틈이면 중간에 발판
-    if (Math.abs(tx - sx) > 5) for (let x = sx + Math.sign(tx - sx) * 4; Math.abs(x - tx) > 2; x += Math.sign(tx - sx) * 4) platform(x, sy + 1);
+    genStats.flat++;
+    // 바닥이 없는 넓은 틈만 바위 턱으로 메운다 (발밑 3칸 안에 바닥이 있으면 그대로)
+    const dir = Math.sign(tx - sx) || 1;
+    let run = 0;
+    for (let x = sx + dir; tx !== sx && x !== tx; x += dir) {
+      let floor = false;
+      for (let dy = 1; dy <= 3; dy++) {
+        const ch = cv.get(x, sy + dy);
+        if (ch === '#' || ch === '=' || ch === 'D') floor = true;
+      }
+      run = floor ? 0 : run + 1;
+      // 4칸 넘게 바닥이 없으면 가운데에 2칸짜리 바위 턱
+      if (run >= 4 && cv.get(x, sy + 1) === '.' && !cv.isLocked(x, sy + 1)) {
+        cv.set(x, sy + 1, '#');
+        if (cv.get(x - dir, sy + 1) === '.' && !cv.isLocked(x - dir, sy + 1)) cv.set(x - dir, sy + 1, '#');
+        run = 0;
+      }
+    }
     return;
   }
-  // 목표가 위: 한 단계에 위로 최대 3칸, 옆으로 최대 4칸씩 발판 (단방향이라 아래에서 뚫고 올라간다)
-  // 마지막 발판은 접근 열에 (턱 바로 밑이면 머리를 박는다)
+  // 목표가 위: 목표 칸 옆 열에 넝쿨을 늘어뜨린다 (위는 바위에 매달리고 아래는 바닥까지)
+  if (depth < 3 && hangVine(rng, cv, a, pr, sx, sy, tx, ty, depth)) return;
+  genStats.ladder++;
+  // 넝쿨을 놓을 자리가 없으면 발판 사다리: 한 단계에 위로 2칸, 옆으로 3칸까지, 마지막 발판은 접근 열에
   const ax = pr.approachX ?? tx;
-  // 여유 있게 한 단계에 위로 2칸, 옆으로 3칸까지 (3칸 높이를 옆으로 비켜 오르는 건 빠듯하다)
   const steps = Math.max(Math.ceil((sy - ty) / 2), Math.ceil(Math.abs(ax - sx) / 3) + 1, 1);
   let px = sx;
   let py = sy;
@@ -339,6 +355,64 @@ function bridge(rng: Rng, cv: Canvas, a: Analysis, pr: Problem): void {
     px = x;
     py = y;
   }
+}
+
+/**
+ * 목표(tx, ty)에 서는 높이까지 닿는 넝쿨을 목표 옆 열에 놓는다. 이미 놓은 넝쿨이면 넝쿨 아래까지 가는 길을 잇는다.
+ * 넝쿨 규칙은 reach.ts의 addVineEdges와 같다: 옆 칸(x±1, r-1)으로 내리려면 넝쿨이 r-1행 또는 r행을 덮어야 한다.
+ */
+function hangVine(rng: Rng, cv: Canvas, a: Analysis, pr: Problem, sx: number, _sy: number, tx: number, ty: number, depth: number): boolean {
+  const pref = pr.approachX !== undefined ? Math.sign(pr.approachX - tx) || 1 : Math.sign(sx - tx) || 1;
+  const vineOk = (x: number, y: number) => cv.inner(x, y) && (cv.get(x, y) === '.' || cv.get(x, y) === '|');
+  let vx = -1;
+  for (const d of [1, 2, 3]) {
+    for (const sgn of [pref, -pref]) {
+      const x = tx + sgn * d;
+      if (vx < 0 && vineOk(x, ty) && vineOk(x, ty + 1) && !cv.isLocked(x, ty + 1)) vx = x;
+    }
+    if (vx >= 0) break;
+  }
+  if (vx < 0) {
+    // 양옆이 바위: 목표 옆 한 열을 파서 넝쿨 자리를 만든다
+    const x = tx + pref;
+    if (depth >= 2 || !cv.inner(x, ty) || cv.isLocked(x, ty) || cv.isLocked(x, ty + 1)) return failVine('no column');
+    for (let y = ty - 1; y <= ty + 1; y++) cv.carve(x, y);
+    if (!vineOk(x, ty) || !vineOk(x, ty + 1)) return failVine('no column');
+    vx = x;
+  }
+  // 아래로 바닥(바위/발판)까지
+  let yb = ty + 1;
+  while (yb + 1 < cv.h - 1 && vineOk(vx, yb + 1) && yb - ty < 20) yb++;
+  const below = cv.get(vx, yb + 1);
+  if (below !== '#' && below !== '=') return failVine(`below ${below}`);
+  if (yb - ty < 2) {
+    // 높이 차가 작다: 넝쿨 대신 머리 위 공간을 파서 뛰어오를 수 있게
+    let carved = false;
+    for (let y = ty - 2; y <= ty; y++) {
+      for (let x = Math.min(vx, tx) - 1; x <= Math.max(vx, tx) + 1; x++) {
+        if (cv.get(x, y) === '#' && cv.inner(x, y) && !cv.isLocked(x, y)) carved = true;
+        cv.carve(x, y);
+      }
+    }
+    if (carved) return true;
+    // 목표 옆 바닥까지 가는 길이 문제: 거기까지 잇는다
+    if (depth < 2 && (vx !== sx || yb !== _sy)) {
+      bridge(rng, cv, a, { from: pr.from, to: [vx, yb] }, depth + 1);
+      return true;
+    }
+    return failVine('short');
+  }
+  if (cv.get(vx, ty) === '|') {
+    // 이미 놓은 넝쿨: 넝쿨 아래 바닥까지 가는 길이 문제다
+    bridge(rng, cv, a, { from: pr.from, to: [vx, yb] }, depth + 1);
+    return true;
+  }
+  // 위로는 바위에 닿을 때까지(최대 5칸) 늘인다
+  let yt = ty;
+  while (yt - 1 > 0 && cv.get(vx, yt - 1) === '.' && !cv.isLocked(vx, yt - 1) && ty - yt < 5) yt--;
+  for (let y = yt; y <= yb; y++) cv.set(vx, y, '|');
+  genStats.vine++;
+  return true;
 }
 
 /** 표식: 포탈 후보, 몬스터, 상자, 함정, 선택적 발판 */
@@ -420,6 +494,13 @@ function placeMarkers(rng: Rng, spec: RoomSpec, cv: Canvas, a: Analysis): boolea
 }
 
 /** 방 하나를 만든다. 검증을 통과하지 못하면 null */
+/** 생성 통계 (스크립트/디버그용) */
+export const genStats = { vine: 0, vineFail: {} as Record<string, number>, ladder: 0, flat: 0 };
+const failVine = (why: string): boolean => {
+  genStats.vineFail[why] = (genStats.vineFail[why] ?? 0) + 1;
+  return false;
+};
+
 /** 마지막 실패 이유 (생성 스크립트 통계용) */
 export let lastFailure = '';
 

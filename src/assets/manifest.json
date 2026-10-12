@@ -1089,7 +1089,8 @@
         "breakable": "#3b3346",
         "seal": "#aa2244",
         "gate": "#4a8a6a",
-        "lock": "#c8a040"
+        "lock": "#c8a040",
+        "vine": "#4f9a3c"
       }
     },
     {
@@ -1103,7 +1104,8 @@
         "breakable": "#4a4238",
         "seal": "#aa2244",
         "gate": "#4a8a6a",
-        "lock": "#c8a040"
+        "lock": "#c8a040",
+        "vine": "#4f9a3c"
       }
     },
     {
@@ -1117,7 +1119,8 @@
         "breakable": "#1d1b33",
         "seal": "#aa2244",
         "gate": "#4a8a6a",
-        "lock": "#c8a040"
+        "lock": "#c8a040",
+        "vine": "#4f9a3c"
       }
     }
   ],
