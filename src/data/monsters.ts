@@ -71,17 +71,20 @@ export const MONSTERS: readonly MonsterDef[] = [
   },
 ];
 
-/** 층별 출현 가중치 [가정]: 현재 테마의 3종이 중심이고, 이전 테마 몬스터도 조금 섞인다 */
+/**
+ * 층별 출현 가중치 [가정]. 기획자 요청(메이플스토리처럼 단순하게)으로 일반 몬스터는 걷는 형만 나온다:
+ * 막힌 블록 위를 좌우로 걷다 벽/낭떠러지에서 돈다. 비행형/원거리형 정의는 남겨 두었다(다시 쓰려면 여기 넣는다).
+ */
 export const MONSTER_WEIGHTS: Readonly<Record<number, Readonly<Record<string, number>>>> = {
-  1: { slime: 5, bat: 3 },
-  2: { slime: 4, bat: 3, spitter: 2 },
-  3: { slime: 3, bat: 3, spitter: 3 },
-  4: { knight: 4, wisp: 3, slime: 1, bat: 1 },
-  5: { knight: 4, wisp: 3, turret: 2, spitter: 1 },
-  6: { knight: 3, wisp: 3, turret: 3, bat: 1 },
-  7: { crawler: 4, eye: 3, knight: 1, wisp: 1 },
-  8: { crawler: 4, eye: 3, caster: 2, turret: 1 },
-  9: { crawler: 3, eye: 3, caster: 3, knight: 1 },
+  1: { slime: 1 },
+  2: { slime: 1 },
+  3: { slime: 1 },
+  4: { knight: 3, slime: 1 },
+  5: { knight: 3, slime: 1 },
+  6: { knight: 1 },
+  7: { crawler: 3, knight: 1 },
+  8: { crawler: 3, knight: 1 },
+  9: { crawler: 1 },
 };
 
 export function monsterById(id: string): MonsterDef {

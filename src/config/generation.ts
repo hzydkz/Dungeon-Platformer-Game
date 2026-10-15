@@ -91,14 +91,36 @@ export const RED_LAYOUT = {
   bossDistanceRange: [0.8, 1.0] as const,
 } as const;
 
+/**
+ * 몬스터 배치 (기획자 요청: 메이플스토리처럼 단순한 몬스터 여러 마리, 막힌 블록 위에만).
+ * 템플릿의 M 표식 대신 층 생성 때 방마다 막힌 블록(벽) 위 빈칸을 골라 놓는다. [가정]
+ */
+export const MONSTER_SPAWN = {
+  /** 한 화면(1칸) 방의 몬스터 수 범위: 층 번호별 */
+  perRoom: [[3, 4], [3, 4], [3, 5], [3, 5], [3, 5], [4, 5], [4, 5], [4, 5], [4, 5]] as readonly (readonly [number, number])[],
+  /** 여러 칸 방은 칸 수만큼 곱하되 이 배수까지 */
+  maxCellMultiplier: 3,
+  /** 서로 이 거리(타일) 안에는 두지 않는다: 같은 높이면 가로 거리, 높이가 다르면 세로 거리 */
+  spacingX: 5,
+  spacingY: 3,
+  /** 걸어 다닐 바닥이 이만큼(타일) 이어진 곳만 */
+  minRun: 4,
+  /** 포탈/상자/상점/제단/열쇠/레버와 이 거리(타일) 안에는 두지 않는다 */
+  clearance: 3,
+  /** 방 가장자리(출입구) 이 칸 수 안에는 두지 않는다 */
+  edgeMargin: 2,
+  /** 처치한 몬스터가 같은 자리에 다시 생기기까지의 시간(초). 화면 안이어도 생긴다 (기획자 선택) */
+  respawnDelay: 20,
+  /** 다시 생길 자리에 플레이어가 이 거리(px) 안에 있으면 잠시 미룬다 (생기자마자 부딪히지 않게) */
+  respawnPlayerDistance: 40,
+  /** 다시 생길 때 나타나는 연출 시간(초). 이 동안은 움직이지 않고 부딪혀도 피해가 없다 */
+  respawnFadeIn: 0.6,
+} as const;
+
 /** 방 템플릿 내부 랜덤 요소 확률 [가정] */
 export const ROOM_RANDOM = {
   /** 선택적 발판(o) 세트가 켜질 확률 (방마다 한 번 결정) */
   optionalPlatformChance: 0.5,
-  /** 몬스터 스폰(M) 위치마다 몬스터가 생길 확률 (층에 따라 증가) */
-  monsterChanceBase: 0.45,
-  monsterChancePerFloor: 0.04,
-  monsterChanceMax: 0.85,
   /** 상자(C) 위치마다 상자가 생길 확률 */
   chestChance: 0.25,
   /** 막다른 방의 상자 확률 배율 (5.6 보물 방) */

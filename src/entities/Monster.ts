@@ -37,6 +37,10 @@ export class Monster extends Phaser.Physics.Arcade.Sprite implements Hittable {
   private flashTime = 0;
   private wavePhase: number;
   private readonly spawnY: number;
+  /** 다시 생기는 연출 중(이 시각(초)까지)에는 움직이지 않고 접촉 피해도 없다 */
+  spawnGraceUntil = 0;
+  /** 처음 놓인 칸 (다시 생길 때 이 자리에) */
+  readonly spawnTile: { readonly x: number; readonly y: number };
   /** 돌진/도약처럼 몸으로 공격하는 중이면 접촉 피해 대신 공격 피해 */
   bodyAttack = false;
 
@@ -45,6 +49,7 @@ export class Monster extends Phaser.Physics.Arcade.Sprite implements Hittable {
     super(scene, tileX * s + s / 2, (tileY + 1) * s, AssetKey.monster(def.id), 0);
     this.def = def;
     this.room = room;
+    this.spawnTile = { x: tileX, y: tileY };
     this.maxHp = Math.round(def.hp * scale);
     this.hp = this.maxHp;
     this.contactDamage = Math.round(def.contactDamage * scale);
@@ -137,6 +142,10 @@ export class Monster extends Phaser.Physics.Arcade.Sprite implements Hittable {
 
   tick(dt: number, w: MonsterWorld): void {
     if (!this.alive || !this.arcadeBody.enable) return;
+    if (this.scene.time.now / 1000 < this.spawnGraceUntil) {
+      this.arcadeBody.setVelocityX(0);
+      return;
+    }
     const body = this.arcadeBody;
     this.stateTime += dt;
     this.cooldown -= dt;

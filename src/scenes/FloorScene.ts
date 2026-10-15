@@ -5,7 +5,7 @@ import type { Hittable } from '../combat/types';
 import { COMBAT } from '../config/combat';
 import { DEBUG } from '../config/debug';
 import { CAMERA, DISPLAY } from '../config/display';
-import { ROOM } from '../config/generation';
+import { MONSTER_SPAWN, ROOM } from '../config/generation';
 import { MOVEMENT, SPIKE_HITBOX } from '../config/movement';
 import { PROGRESSION } from '../config/progression';
 import { themeForFloor, type ThemeDef } from '../config/themes';
@@ -107,6 +107,9 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
   protected layer!: Phaser.Tilemaps.TilemapLayer;
   protected portals: Portal[] = [];
   protected monsters: Monster[] = [];
+  /** 처치된 몬스터가 다시 생길 시각(초)과 자리 (기획자 요청: 메이플스토리식 재생성) */
+  protected respawns: { at: number; x: number; y: number; room: number; id: string }[] = [];
+  protected respawnRng!: Rng;
   protected monsterGroup!: Phaser.Physics.Arcade.Group;
   protected playerShots!: Phaser.Physics.Arcade.Group;
   protected enemyShots!: Phaser.Physics.Arcade.Group;
@@ -156,6 +159,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.kind = data.kind ?? 'floor';
     this.portals = [];
     this.monsters = [];
+    this.respawns = [];
     this.currentRoom = -1;
     this.ending = false;
     this.boss = null;
@@ -319,7 +323,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     });
     this.physics.add.overlap(this.player, this.monsterGroup, (_p, mon) => {
       const m = mon as Monster;
-      if (!m.alive) return;
+      if (!m.alive || this.time.now / 1000 < m.spawnGraceUntil) return;
       const dmg = m.bodyAttack ? m.attackDamage : m.contactDamage;
       if (dmg > 0) this.combat.hurt(dmg, m.x, m.def.name, m);
     });
@@ -335,14 +339,47 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     const rng = new Rng(deriveSeed(this.floorData.seed, 'monsters'));
     const table = monsterTable(this.difficultyLevel);
     const scale = monsterScale(this.difficultyLevel);
+    this.respawnRng = new Rng(deriveSeed(this.floorData.seed, 'respawn'));
     for (const sp of this.floorData.monsters) {
       const id = table[rng.weightedIndex(table.map(([, w]) => w))]![0];
-      const m = new Monster(this, sp.x, sp.y, monsterById(id), scale, sp.room, rng);
-      this.monsterGroup.add(m);
-      // 그룹에 넣으면 물리 설정이 초기화되므로 비행형 중력을 다시 끈다
-      if (m.def.behavior === 'flyer') m.arcadeBody.setAllowGravity(false);
-      m.setActiveInRoom(false);
-      this.monsters.push(m);
+      this.createMonster(sp.x, sp.y, sp.room, id, scale, rng);
+    }
+  }
+
+  protected createMonster(x: number, y: number, room: number, id: string, scale: number, rng: Rng): Monster {
+    const m = new Monster(this, x, y, monsterById(id), scale, room, rng);
+    this.monsterGroup.add(m);
+    // 그룹에 넣으면 물리 설정이 초기화되므로 비행형 중력을 다시 끈다
+    if (m.def.behavior === 'flyer') m.arcadeBody.setAllowGravity(false);
+    m.setActiveInRoom(false);
+    this.monsters.push(m);
+    return m;
+  }
+
+  /** 처치된 몬스터를 시간이 되면 같은 자리에 다시 만든다 */
+  protected updateRespawns(): void {
+    const now = this.time.now / 1000;
+    const s = DISPLAY.tileSize;
+    for (let i = this.respawns.length - 1; i >= 0; i--) {
+      const r = this.respawns[i]!;
+      if (now < r.at) continue;
+      const px = r.x * s + s / 2;
+      const py = (r.y + 1) * s;
+      if (Math.hypot(this.player.x - px, this.player.y + 11 - py) < MONSTER_SPAWN.respawnPlayerDistance) {
+        r.at = now + 1;
+        continue;
+      }
+      this.respawns.splice(i, 1);
+      // 죽은 몬스터 객체는 정리한다
+      this.monsters = this.monsters.filter((m) => {
+        if (m.alive || m.spawnTile.x !== r.x || m.spawnTile.y !== r.y) return true;
+        m.destroy();
+        return false;
+      });
+      const m = this.createMonster(r.x, r.y, r.room, r.id, monsterScale(this.difficultyLevel), this.respawnRng);
+      m.spawnGraceUntil = now + MONSTER_SPAWN.respawnFadeIn;
+      m.setAlpha(0);
+      this.tweens.add({ targets: m, alpha: 1, duration: MONSTER_SPAWN.respawnFadeIn * 1000 });
     }
   }
 
@@ -768,6 +805,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
       this.fx.burst(target.x, target.y - 6, 0xe04848, 12, 100);
       if (this.lootRng.chance(COMBAT.drops.healChance)) this.dropHeal(target.x, target.y - 8);
       this.tweens.add({ targets: target, alpha: 0, duration: 200, onComplete: () => target.setVisible(false) });
+      this.respawns.push({ at: this.time.now / 1000 + MONSTER_SPAWN.respawnDelay, x: target.spawnTile.x, y: target.spawnTile.y, room: target.room, id: target.def.id });
     }
   }
 
@@ -1135,6 +1173,7 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     this.player.tick(dt, input);
     if (this.combat.dashing) this.player.arcadeBody.setVelocityY(0);
     this.handleSpikes();
+    this.updateRespawns();
     this.updateAwake();
     for (const m of this.monsters) {
       if (!m.alive || !m.awake) continue;

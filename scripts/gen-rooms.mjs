@@ -1,5 +1,5 @@
 // 방 템플릿 자동 생성: node scripts/gen-rooms.mjs
-// src/core/generation/roomgen.ts로 굴 모양 방을 만들고, 도달성 검증을 통과한 것만 src/rooms/gen/*.txt로 저장한다.
+// src/core/generation/roomgen.ts로 굴 모양 방을 만들고, 도달성 검증을 통과한 것만 정리(prune.ts)해서 src/rooms/gen/*.txt로 저장한다.
 // 시드가 고정이라 같은 코드면 같은 결과. 생성기나 물리값을 바꾸면 다시 돌리고 npm test로 확인한다.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createServer } from 'vite';
@@ -9,6 +9,7 @@ try {
   const G = await server.ssrLoadModule('/src/core/generation/roomgen.ts');
   const { REACH_PARAMS } = await server.ssrLoadModule('/src/core/generation/params.ts');
   const { Rng } = await server.ssrLoadModule('/src/core/rng.ts');
+  const { pruneTemplate } = await server.ssrLoadModule('/src/core/generation/prune.ts');
   // [가로 칸, 세로 칸, 개수, 변마다 출입구가 있을 확률]
   const plan = [
     [1, 1, 64, 0.8],
@@ -29,7 +30,8 @@ try {
       if (caps.length < 2) continue;
       const t = G.generateRoom(rng, { id: `G${cw}x${ch}_${String(made + 1).padStart(2, '0')}`, cw, ch, caps }, REACH_PARAMS);
       if (!t) continue;
-      out.push(G.formatTemplate(t));
+      // 지워도 되는 넝쿨/단방향 발판과 몬스터 표식을 지운다 (scripts/prune-rooms.mjs와 같은 정리)
+      out.push(G.formatTemplate(pruneTemplate(t, REACH_PARAMS).template));
       made++;
     }
     writeFileSync(new URL(`../src/rooms/gen/g${cw}x${ch}.txt`, import.meta.url), out.join('\n'));

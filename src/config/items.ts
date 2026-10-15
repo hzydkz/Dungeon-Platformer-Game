@@ -37,8 +37,8 @@ export const ITEMS = {
 export const ECONOMY = {
   /** 층 배율: × (1 + perLevel × (난이도 레벨 - 1)) */
   goldPerLevel: 0.15,
-  /** 몬스터 처치 골드 (최소, 최대) */
-  monsterGold: [1, 3] as readonly [number, number],
+  /** 몬스터 처치 골드 (최소, 최대). 몬스터 수가 늘어 [1, 3] → [0, 1]로 낮춤 (0이면 주지 않음) [가정] */
+  monsterGold: [0, 1] as readonly [number, number],
   /** 보스 처치 골드 (빨간 던전은 × redBossGoldMultiplier) */
   bossGold: 40,
   /** 잠긴 방 보물 상자 골드 (× 층 골드 배율) */
@@ -66,8 +66,9 @@ export const SHOP = {
 
 /** 레벨 */
 export const LEVEL = {
-  /** 경험치: 몬스터 1마리 / 보스. 난이도 레벨의 몬스터 배율을 곱한다 */
-  monsterXp: 6,
+  /** 경험치: 몬스터 1마리 / 보스. 난이도 레벨의 몬스터 배율을 곱한다.
+   * 몬스터가 메이플식 배치로 층당 3.3~5배 늘어 6 → 2로 낮춤(처음 배치분 합계는 이전과 비슷, 재생성분은 추가) [가정] */
+  monsterXp: 2,
   bossXp: 60,
   redBossXpMultiplier: 1.5,
   /** 레벨 n → n+1에 필요한 경험치 = round(base × n^exponent) */
