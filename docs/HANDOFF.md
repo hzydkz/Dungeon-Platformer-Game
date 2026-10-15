@@ -96,6 +96,7 @@ src/assets/manifest.json  에셋 키 → public/assets/ 파일. 없으면 플레
 - **탐사 요소** (`planExploration`): 지름길(gate)은 레이아웃에 연결을 더하므로 템플릿 배정 전에 정한다. 잠긴 문/지름길 문은 `Tile.Lock`/`Tile.Gate`(막힌 타일), 숨은 방 입구는 `Tile.Breakable`. 층 전체 검증은 문이 닫힌 상태에서 열쇠·레버·출구 등에 갈 수 있는지 본다. 잠긴 방 안 상자는 `locked`, 숨은 방 상자는 `secret`.
 - **넝쿨** (`Tile.Vine`, 충돌 없음): `Player.tryVine/tickVine`, 몸 위치를 직접 옮기지 말고 속도로(직접 옮기면 충돌을 건너뛰어 벽에 끼었다). 뛰어내린 넝쿨은 잠시 다시 붙잡지 않는다(`vineLeft`). 도달성 검증기는 `addVineEdges`(넝쿨 아무 칸에서 붙잡아 위아래 아무 칸으로 내림). 생성기 무한 루프를 한 번 냈다(같은 열 sx == tx). 생성기를 고치면 시간 제한을 두고 돌릴 것.
 - **시야와 지도** (`core/map/vision.ts`, `scenes/Fog.ts`): 막힌 타일(`isSolidTile`)이 시야를 가린다. 안개는 타일 1개 = 1픽셀 캔버스를 16배로 늘린(선형 보간) 이미지(depth 35). 보이는 칸은 `Exploration.markSeen`으로 기록하고, 지도(SketchMap)와 표식(markers)은 `isSeen`만 본다. 몬스터 표시/포탈 발견도 시야 기준. 지도 전체 공개 디버그는 `fog.invalidate()`도 부른다.
+- **타일 충돌 면** (`scenes/tilemap.ts`의 `fixOneWayFaces`): Phaser는 이웃이 충돌 타일이면 그쪽 면을 끈다. 단방향 블록도 충돌 타일이라 그 아래 바닥 윗면이 꺼져, ↓+점프로 단방향 블록을 통과하면 아래 벽을 전부 뚫고 떨어졌다(기획자 영상 제보). 타일을 바꾸는 코드는 반드시 `setMapTile`을 쓸 것.
 - **블록 주석 안에 `**/` 금지**: 글롭 경로를 주석에 쓰다가 주석이 닫혀 빌드가 깨진 적이 있다.
 - **발판 높이 계산 실수 주의**: "3타일 오르기" = 서 있는 바닥 윗면끼리 3칸 차이. 템플릿 작성 중 여러 번 4칸으로 잘못 셌다. 템플릿을 고치면 `npm test`가 도달 불가 위치를 알려 준다.
 - **도달성 검증기**(`core/generation/reach.ts`)는 게임과 같은 `PlayerMotor`와 타일 충돌로 조작을 시뮬레이션한다. 물리값/가시 판정/몸 크기를 바꾸면 검증기도 같은 값을 쓰므로 템플릿이 실패할 수 있다. 가장 느린 이동속도(강철 피부 0.9배) 기준(`MIN_SPEED_MULTIPLIER`).

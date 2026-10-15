@@ -33,6 +33,7 @@ export function buildTilemap(scene: Phaser.Scene, grid: TileGrid, tilesetKey: st
   layer.forEachTile((tile) => {
     if (isOneWayTile(tile.index)) tile.setCollision(false, false, true, false, false);
   });
+  fixOneWayFaces(layer, 0, 0, grid.width - 1, grid.height - 1);
   return { map, layer };
 }
 
@@ -43,5 +44,33 @@ export function setMapTile(layer: Phaser.Tilemaps.TilemapLayer, x: number, y: nu
   } else {
     const tile = layer.putTileAt(t, x, y);
     tile.setCollision(COLLIDING.includes(t as never));
+    if (isOneWayTile(t)) tile.setCollision(false, false, true, false, false);
+  }
+  fixOneWayFaces(layer, x - 1, y - 1, x + 1, y + 1);
+}
+
+/**
+ * Phaser는 이웃 타일이 충돌 타일이면 그쪽 면을 충돌 검사에서 뺀다. 단방향 블록도 충돌 타일로 쳐서,
+ * 단방향 블록과 맞닿은 벽의 면(특히 단방향 블록 바로 아래 바닥의 윗면)이 빠져
+ * 단방향 블록을 통과하면(↓+점프) 그 아래 벽을 전부 뚫고 떨어지는 버그가 있었다. 그 면을 다시 켠다.
+ */
+function fixOneWayFaces(layer: Phaser.Tilemaps.TilemapLayer, x0: number, y0: number, x1: number, y1: number): void {
+  const solid = (x: number, y: number) => {
+    const t = layer.getTileAt(x, y);
+    return t && t.collides && !isOneWayTile(t.index) ? t : null;
+  };
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const t = layer.getTileAt(x, y);
+      if (!t || !isOneWayTile(t.index)) continue;
+      const below = solid(x, y + 1);
+      if (below) below.faceTop = true;
+      const above = solid(x, y - 1);
+      if (above) above.faceBottom = true;
+      const left = solid(x - 1, y);
+      if (left) left.faceRight = true;
+      const right = solid(x + 1, y);
+      if (right) right.faceLeft = true;
+    }
   }
 }
