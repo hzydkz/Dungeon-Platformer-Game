@@ -87,10 +87,11 @@ describe('탐사 요소 배치 (지름길, 잠긴 방, 숨은 방, 구역)', () 
   });
 });
 
-/** 특별한 문을 모두 연 격자 (열쇠/레버/비밀 벽을 모두 쓴 상태) */
+/** 특별한 문과 비밀 벽을 모두 연 격자 (열쇠/레버를 쓰고 비밀 벽을 모두 부순 상태) */
 function opened(f: GeneratedFloor): TileGrid {
   const g: TileGrid = { width: f.grid.width, height: f.grid.height, tiles: new Uint8Array(f.grid.tiles) };
   for (const d of f.specialDoors) for (const t of d.tiles) setTile(g, t.x, t.y, Tile.Empty);
+  for (const w of f.secretWalls) setTile(g, w.x, w.y, Tile.Empty);
   return g;
 }
 
@@ -99,8 +100,12 @@ describe('탐사 요소 도달성 (게임과 같은 이동 시뮬레이션)', ()
     [101, 3],
     [202, 6],
     [303, 8],
+    // 넝쿨 정리가 지름길 문을 연 뒤에만 쓰는 넝쿨을 지워 빠져나올 수 없는 곳이 생겼던 층
+    [1289, 9],
+    // 비밀 벽 뒤 비밀 상자가 있는 층
+    [91, 9],
   ] as const) {
-    it(`시드 ${seed}, ${floor}층: 문을 모두 열면 보물 상자/숨은 방 상자에 가고 돌아올 수 있다`, () => {
+    it(`시드 ${seed}, ${floor}층: 문과 비밀 벽을 모두 열면 모든 상자에 가고 돌아올 수 있다`, () => {
       const f = generateFloor({ runSeed: seed, floor, kind: 'floor' });
       const grid = opened(f);
       const g = buildReachGraph(grid, REACH_PARAMS);
@@ -109,7 +114,7 @@ describe('탐사 요소 도달성 (게임과 같은 이동 시뮬레이션)', ()
       const back = canReach(g, [cell(f.entrance)]);
       const has = (p: { x: number; y: number }) => reach.has(g.nodeOf[cell(p)] as number);
       if (f.vault) expect(has(f.vault.chest)).toBe(true);
-      for (const c of f.chests.filter((x) => x.room === f.hiddenRoom)) expect(has(c)).toBe(true);
+      for (const c of f.chests) expect(has(c), `${c.x},${c.y}`).toBe(true);
       for (const n of reach) expect(back.has(n)).toBe(true);
     }, 60_000);
   }
