@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LAYOUT, RED_LAYOUT } from '../src/config/generation';
 import { floorReachErrors, generateFloor, validateFloor, type GeneratedFloor } from '../src/core/generation/floor';
+import { Tile } from '../src/core/tiles';
 
 /** 대량 생성 테스트는 층 전체 이동 시뮬레이션을 끈다 (그 검증은 아래 '층 전체 타일 도달성'에서) */
 const gen = (runSeed: number, floor: number, kind: 'floor' | 'red' = 'floor') => generateFloor({ runSeed, floor, kind, reachCheck: false });
@@ -141,4 +142,19 @@ describe('방 구조 (기획자 요청: 방 사이를 오가는 느낌 대신 �
   it('대부분의 층에서 방 경계가 트여 있다', () => {
     expect(floors.filter((f) => f.widened).length / floors.length).toBeGreaterThan(0.8);
   });
+});
+
+describe('층 단위 넝쿨 정리 (기획자 요청: 막힌 곳으로 가는 넝쿨 제거)', () => {
+  for (const [seed, floor] of [
+    [7, 1],
+    [44, 5],
+  ] as const) {
+    it(`시드 ${seed}, ${floor}층: 넝쿨이 줄고, 층 전체 검증은 그대로 통과한다`, () => {
+      const vines = (f: GeneratedFloor) => f.grid.tiles.filter((t) => t === Tile.Vine).length;
+      const before = generateFloor({ runSeed: seed, floor, kind: 'floor', pruneVines: false });
+      const after = generateFloor({ runSeed: seed, floor, kind: 'floor' });
+      expect(vines(after)).toBeLessThan(vines(before));
+      expect(floorReachErrors(after)).toEqual([]);
+    }, 60_000);
+  }
 });

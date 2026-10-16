@@ -226,7 +226,8 @@ export function simulate(
 }
 
 /** 격자 전체의 이동 그래프를 만든다. `region`을 주면 그 안의 칸만 출발점으로 쓴다. */
-export function buildReachGraph(grid: TileGrid, p: ReachParams): ReachGraph {
+/** vines: false면 넝쿨 간선을 넣지 않는다 (넝쿨 줄기별로 따로 다룰 때) */
+export function buildReachGraph(grid: TileGrid, p: ReachParams, opts: { vines?: boolean } = {}): ReachGraph {
   const s = p.tileSize;
   const nodeOf = new Int32Array(grid.width * grid.height).fill(-1);
   const cells: number[] = [];
@@ -265,21 +266,20 @@ export function buildReachGraph(grid: TileGrid, p: ReachParams): ReachGraph {
       add(n, simulate(grid, p, cx, feet, st));
     }
   }
-  addVineEdges(grid, nodeOf, edges, p);
+  if (opts.vines !== false) addVineEdges(grid, nodeOf, edges);
   return { grid, cells, nodeOf, edges };
 }
 
-/**
- * 넝쿨 이동 간선 (게임의 Player 넝쿨 오르기와 같은 규칙, 보수적으로).
- * 세로로 이어진 넝쿨 칸(y0~y1)에서 발 높이 r(발이 r행 윗면)은 y0..y1+1 사이를 오르내릴 수 있다.
- * - 붙잡기: 넝쿨 옆 칸(x±1, r-1)에 서서 r행에 넝쿨이 있으면 걸어 들어가며 붙잡는다. 넝쿨 바로 아래 바닥(x, y1)에 서서 붙잡는다.
- * - 내리기: 그 높이의 옆 칸(x±1, r-1)이 서 있을 수 있는 칸이면 옆으로 내린다. 아래 끝에서 놓으면 그 열로 떨어진다(가시를 지나면 버림).
- */
-function addVineEdges(grid: TileGrid, nodeOf: Int32Array, edges: number[][], p: ReachParams): void {
-  const W = grid.width;
-  const node = (x: number, y: number) => (x < 0 || y < 0 || x >= W || y >= grid.height ? -1 : (nodeOf[y * W + x] as number));
-  void p;
-  for (let x = 0; x < W; x++) {
+/** 세로로 이어진 넝쿨 한 줄기 (x열, y0~y1행) */
+export interface VineRun {
+  readonly x: number;
+  readonly y0: number;
+  readonly y1: number;
+}
+
+export function findVineRuns(grid: TileGrid): VineRun[] {
+  const out: VineRun[] = [];
+  for (let x = 0; x < grid.width; x++) {
     let y = 0;
     while (y < grid.height) {
       if (!isVineTile(getTile(grid, x, y))) {
@@ -288,35 +288,56 @@ function addVineEdges(grid: TileGrid, nodeOf: Int32Array, edges: number[][], p: 
       }
       const y0 = y;
       while (y < grid.height && isVineTile(getTile(grid, x, y))) y++;
-      const y1 = y - 1;
-      const grab: number[] = [];
-      const exits: number[] = [];
-      for (let r = y0; r <= y1 + 1; r++) {
-        for (const dx of [-1, 1]) {
-          const n = node(x + dx, r - 1);
-          if (n < 0) continue;
-          exits.push(n);
-          if (r <= y1) grab.push(n);
-        }
-      }
-      const bottom = node(x, y1);
-      if (bottom >= 0) {
-        grab.push(bottom);
-        exits.push(bottom);
-      } else {
-        // 아래 끝에서 놓고 떨어진다
-        for (let yy = y1 + 1; yy < grid.height; yy++) {
-          const t = getTile(grid, x, yy);
-          if (isHazardTile(t)) break;
-          if (isSolidTile(t) || isOneWayTile(t)) {
-            const land = node(x, yy - 1);
-            if (land >= 0) exits.push(land);
-            break;
-          }
-        }
-      }
-      for (const a of grab) for (const b of exits) if (a !== b && !edges[a]!.includes(b)) edges[a]!.push(b);
+      out.push({ x, y0, y1: y - 1 });
     }
+  }
+  return out;
+}
+
+/**
+ * 넝쿨 한 줄기가 만드는 이동 간선 [출발 노드, 도착 노드] (게임의 Player 넝쿨 오르기와 같은 규칙, 보수적으로).
+ * 세로로 이어진 넝쿨 칸(y0~y1)에서 발 높이 r(발이 r행 윗면)은 y0..y1+1 사이를 오르내릴 수 있다.
+ * - 붙잡기: 넝쿨 옆 칸(x±1, r-1)에 서서 r행에 넝쿨이 있으면 걸어 들어가며 붙잡는다. 넝쿨 바로 아래 바닥(x, y1)에 서서 붙잡는다.
+ * - 내리기: 그 높이의 옆 칸(x±1, r-1)이 서 있을 수 있는 칸이면 옆으로 내린다. 아래 끝에서 놓으면 그 열로 떨어진다(가시를 지나면 버림).
+ */
+export function vineRunEdges(grid: TileGrid, nodeOf: Int32Array, run: VineRun): [number, number][] {
+  const W = grid.width;
+  const node = (x: number, y: number) => (x < 0 || y < 0 || x >= W || y >= grid.height ? -1 : (nodeOf[y * W + x] as number));
+  const { x, y0, y1 } = run;
+  const grab: number[] = [];
+  const exits: number[] = [];
+  for (let r = y0; r <= y1 + 1; r++) {
+    for (const dx of [-1, 1]) {
+      const n = node(x + dx, r - 1);
+      if (n < 0) continue;
+      exits.push(n);
+      if (r <= y1) grab.push(n);
+    }
+  }
+  const bottom = node(x, y1);
+  if (bottom >= 0) {
+    grab.push(bottom);
+    exits.push(bottom);
+  } else {
+    // 아래 끝에서 놓고 떨어진다
+    for (let yy = y1 + 1; yy < grid.height; yy++) {
+      const t = getTile(grid, x, yy);
+      if (isHazardTile(t)) break;
+      if (isSolidTile(t) || isOneWayTile(t)) {
+        const land = node(x, yy - 1);
+        if (land >= 0) exits.push(land);
+        break;
+      }
+    }
+  }
+  const out: [number, number][] = [];
+  for (const a of grab) for (const b of exits) if (a !== b) out.push([a, b]);
+  return out;
+}
+
+function addVineEdges(grid: TileGrid, nodeOf: Int32Array, edges: number[][]): void {
+  for (const run of findVineRuns(grid)) {
+    for (const [a, b] of vineRunEdges(grid, nodeOf, run)) if (!edges[a]!.includes(b)) edges[a]!.push(b);
   }
 }
 

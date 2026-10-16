@@ -9,7 +9,7 @@ import { floorSeed, redDungeonSeed } from '../seed';
 import { Tile, createGrid, getTile, isHazardTile, isOneWayTile, isSolidTile, setTile, type TileGrid } from '../tiles';
 import { generateLayout, roomDistances, roomEdges, type Layout, type LayoutParams, type Link } from './layout';
 import { REACH_PARAMS } from './params';
-import { buildReachGraph, canReach, reachableFrom } from './reach';
+import { buildReachGraph, canReach, findVineRuns, reachableFrom, vineRunEdges, type VineRun } from './reach';
 import { DIR_DELTA, OPPOSITE, isSideDir, resolveTemplate, templateHas, type DoorCap, type Marker, type RoomTemplate } from './template';
 import { loadLibrary, shapeKey, type TemplateLibrary } from './templateLibrary';
 import { trimUnusedUpDoor } from './trim';
@@ -31,6 +31,8 @@ export interface FloorGenOptions {
    * 대량 생성 테스트처럼 속도가 중요할 때만 끈다.
    */
   readonly reachCheck?: boolean;
+  /** false면 층을 다 만든 뒤의 넝쿨 정리(pruneFloorVines)를 하지 않는다 (기본 true, reachCheck가 켜져 있을 때만) */
+  readonly pruneVines?: boolean;
 }
 
 export interface TilePos {
@@ -628,18 +630,23 @@ export function validateFloor(f: Assembled): string[] {
  * 입구에서 갈 수 있는 모든 칸에서 입구로 돌아올 수 있다 (빠지면 못 나오는 곳 없음).
  */
 export function floorReachErrors(f: Assembled): string[] {
-  const g = buildReachGraph(f.grid, REACH_PARAMS);
+  const r = floorReach(f);
+  return r.check(r.runs);
+}
+
+/**
+ * 층 전체 이동 그래프. 넝쿨 간선은 줄기별로 따로 두어, 물리 시뮬레이션은 한 번만 하고
+ * 넝쿨 줄기를 빼거나 줄인 상태의 도달성을 BFS만으로 다시 볼 수 있다 (pruneFloorVines).
+ */
+function floorReach(f: Assembled): { runs: VineRun[]; check: (active: readonly VineRun[]) => string[]; doors: (active: readonly VineRun[]) => boolean[] } {
+  const g = buildReachGraph(f.grid, REACH_PARAMS, { vines: false });
   const W = f.grid.width;
+  const N = g.cells.length;
   const cell = (p: TilePos) => p.y * W + p.x;
-  const start = [cell(f.entrance)];
-  const reach = reachableFrom(g, start);
-  const back = canReach(g, start);
-  const errors: string[] = [];
-  const need = (p: TilePos | null, name: string) => {
-    if (!p) return;
-    const n = g.nodeOf[cell(p)] ?? -1;
-    if (n < 0 || !reach.has(n)) errors.push(`${name} (${p.x},${p.y}) 도달 불가`);
-  };
+  const baseRev: number[][] = Array.from({ length: N }, () => []);
+  g.edges.forEach((es, from) => es.forEach((to) => baseRev[to]!.push(from)));
+  const targets: { p: TilePos; name: string }[] = [];
+  const need = (p: TilePos | null, name: string) => p && targets.push({ p, name });
   need(f.exitPortal, '출구');
   need(f.redPortal, '빨간 포탈');
   need(f.shop, '상점');
@@ -648,13 +655,121 @@ export function floorReachErrors(f: Assembled): string[] {
   for (const c of f.chests) if (!c.secret && !c.locked) need(c, '상자');
   need(f.key, '열쇠');
   for (const d of f.specialDoors) if (d.lever) need(d.lever, '지름길 레버');
-  for (const n of reach) {
-    if (back.has(n)) continue;
-    const c = g.cells[n] as number;
-    errors.push(`(${c % W},${Math.floor(c / W)})에서 입구로 돌아올 수 없음`);
-    break;
+  // 특별한 문 앞: 문 타일 둘레(2칸)의 서 있을 수 있는 칸. 지름길 문은 양쪽 따로, 잠긴 문/비밀 벽은 바깥쪽 아무 데나
+  const doorSides: number[][] = [];
+  for (const d of f.specialDoors) {
+    const xs = d.tiles.map((t) => t.x);
+    const ys = d.tiles.map((t) => t.y);
+    const vertical = Math.min(...xs) === Math.max(...xs);
+    const sides: number[][] = [[], []];
+    const inDoor = new Set(d.tiles.map((t) => cell(t)));
+    for (const t of d.tiles) {
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          const c = cell({ x: t.x + dx, y: t.y + dy });
+          const n = g.nodeOf[c] ?? -1;
+          if (n < 0 || inDoor.has(c)) continue;
+          const side = vertical ? (t.x + dx < Math.min(...xs) ? 0 : 1) : t.y + dy < Math.min(...ys) ? 0 : 1;
+          sides[side]!.push(n);
+        }
+      }
+    }
+    if (d.kind === 'gate') doorSides.push(sides[0]!, sides[1]!);
+    else doorSides.push([...sides[0]!, ...sides[1]!]);
   }
-  return errors;
+  const start = g.nodeOf[cell(f.entrance)] ?? -1;
+  const edgeCache = new Map<string, [number, number][]>();
+  const runEdges = (r: VineRun) => {
+    const k = `${r.x},${r.y0},${r.y1}`;
+    let e = edgeCache.get(k);
+    if (!e) edgeCache.set(k, (e = vineRunEdges(f.grid, g.nodeOf, r)));
+    return e;
+  };
+  const bfs = (base: readonly (readonly number[])[], extra: Map<number, number[]>): Uint8Array => {
+    const seen = new Uint8Array(N);
+    if (start < 0) return seen;
+    const queue = [start];
+    seen[start] = 1;
+    for (let i = 0; i < queue.length; i++) {
+      const n = queue[i]!;
+      for (const m of base[n]!) if (!seen[m]) (seen[m] = 1), queue.push(m);
+      for (const m of extra.get(n) ?? []) if (!seen[m]) (seen[m] = 1), queue.push(m);
+    }
+    return seen;
+  };
+  const evaluate = (active: readonly VineRun[]): { reach: Uint8Array; back: Uint8Array } => {
+    const fwd = new Map<number, number[]>();
+    const rev = new Map<number, number[]>();
+    const push = (m: Map<number, number[]>, a: number, b: number) => {
+      const l = m.get(a);
+      if (l) l.push(b);
+      else m.set(a, [b]);
+    };
+    for (const r of active) for (const [a, b] of runEdges(r)) (push(fwd, a, b), push(rev, b, a));
+    return { reach: bfs(g.edges, fwd), back: bfs(baseRev, rev) };
+  };
+  const doors = (active: readonly VineRun[]): boolean[] => {
+    const { reach } = evaluate(active);
+    return doorSides.map((ns) => ns.some((n) => reach[n]));
+  };
+  const check = (active: readonly VineRun[]): string[] => {
+    const { reach, back } = evaluate(active);
+    const errors: string[] = [];
+    for (const t of targets) {
+      const n = g.nodeOf[cell(t.p)] ?? -1;
+      if (n < 0 || !reach[n]) errors.push(`${t.name} (${t.p.x},${t.p.y}) 도달 불가`);
+    }
+    for (let n = 0; n < N; n++) {
+      if (!reach[n] || back[n]) continue;
+      const c = g.cells[n] as number;
+      errors.push(`(${c % W},${Math.floor(c / W)})에서 입구로 돌아올 수 없음`);
+      break;
+    }
+    return errors;
+  };
+  return { runs: findVineRuns(f.grid), check, doors };
+}
+
+/**
+ * 층을 다 만든 뒤 필요 없는 넝쿨을 지운다 (기획자 요청: 쓰지 않는 출입구처럼 막힌 곳으로 가는 넝쿨 정리).
+ * 줄기마다 통째로 빼 보고, 층 전체 검증(목표 도달, 입구로 돌아오기)이 그대로면 지운다. 안 되면 위쪽 끝부터 한 칸씩 줄여 본다.
+ * 층 검증은 문이 닫힌 상태라 특별한 문 앞(잠긴 문/비밀 벽 바깥, 지름길 문 양쪽)은 목표가 아니다. 그래서 정리 전에 갈 수 있던 문 앞은
+ * 정리 뒤에도 갈 수 있어야 한다. 잠긴 방/숨은 방/비밀 벽이 있는 방(과 그 둘레)은 안쪽이 검증에 들어가지 않으므로 손대지 않는다.
+ * 지운 넝쿨 칸 수를 돌려준다.
+ */
+export function pruneFloorVines(f: Assembled, r = floorReach(f)): number {
+  const keep = new Set<number>([f.vault?.room ?? -1, f.hiddenRoom, ...f.secretWalls.map((w) => w.room)]);
+  const m = 3;
+  const protectedAt = (x: number, y: number) =>
+    [...keep].some((ri) => {
+      const pr = f.rooms[ri];
+      return pr !== undefined && x >= pr.x - m && x < pr.x + pr.w + m && y >= pr.y - m && y < pr.y + pr.h + m;
+    });
+  let active = [...r.runs];
+  let removed = 0;
+  const doorsBefore = r.doors(active);
+  const ok = (runs: readonly VineRun[]) => r.check(runs).length === 0 && r.doors(runs).every((v, i) => v || !doorsBefore[i]);
+  const order = [...r.runs].sort((a, b) => b.y1 - b.y0 - (a.y1 - a.y0));
+  for (const run of order) {
+    let prot = false;
+    for (let y = run.y0; y <= run.y1 && !prot; y++) prot = protectedAt(run.x, y);
+    if (prot) continue;
+    const others = active.filter((x) => x !== run);
+    let cur: VineRun | null = run;
+    if (ok(others)) cur = null;
+    else {
+      while (cur.y0 < cur.y1) {
+        const cand: VineRun = { x: cur.x, y0: cur.y0 + 1, y1: cur.y1 };
+        if (!ok([...others, cand])) break;
+        cur = cand;
+      }
+    }
+    const top = cur ? cur.y0 : run.y1 + 1;
+    for (let y = run.y0; y < top; y++) setTile(f.grid, run.x, y, Tile.Empty);
+    removed += top - run.y0;
+    active = cur ? [...others, cur] : others;
+  }
+  return removed;
 }
 
 /**
@@ -735,8 +850,13 @@ export function generateFloor(opts: FloorGenOptions, lib: TemplateLibrary = load
         break;
       }
       const errors = validateFloor(floor);
-      if (errors.length === 0 && reachCheck) errors.push(...floorReachErrors(floor), ...sealedRoomErrors(floor));
-      if (errors.length === 0) return { ...floor, seed, usedSeed, attempts: attempt + 1 };
+      const reach = errors.length === 0 && reachCheck ? floorReach(floor) : null;
+      if (reach) errors.push(...reach.check(reach.runs), ...sealedRoomErrors(floor));
+      if (errors.length === 0) {
+        // 다 만든 층에서 막힌 곳으로 가는 넝쿨을 지운다 (층 전체 이동 그래프를 그대로 써서 시뮬레이션은 다시 안 한다)
+        if (reach && opts.pruneVines !== false) pruneFloorVines(floor, reach);
+        return { ...floor, seed, usedSeed, attempts: attempt + 1 };
+      }
       lastErrors = errors;
       generationLog.push(`${attempt}${widen ? 'w' : ''}${trim ? 't' : ''}: ${errors[0]}`);
       if (!trim) break;
