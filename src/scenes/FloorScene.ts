@@ -866,6 +866,8 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
       if (!shot.active) continue;
       const b = shot.body as Phaser.Physics.Arcade.Body;
       const sr = new Phaser.Geom.Rectangle(b.x - m, b.y - m, b.width + m * 2, b.height + m * 2);
+      // 레버 같은 상호작용 물체도 투사체로 칠 수 있다 (궁수 화살, 마법사 평타)
+      this.explore?.hitRect(sr);
       for (const t of this.targets()) {
         if (!shot.active) break;
         if (!t.alive || shot.hitSet.has(t)) continue;
@@ -881,6 +883,8 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
     if (!shot.active) return;
     if (shot.splashRadius > 0) {
       this.fx.ring(shot.x, shot.y, shot.splashRadius, 0x7fa8ff);
+      const sp = shot.splashRadius;
+      this.explore?.hitRect(new Phaser.Geom.Rectangle(shot.x - sp, shot.y - sp, sp * 2, sp * 2));
       for (const t of this.targets()) {
         if (shot.hitSet.has(t)) continue;
         const r = t.hitRect(this.tmpRect);
@@ -1062,6 +1066,11 @@ export class FloorScene extends Phaser.Scene implements HudSource, CombatHost, M
           return { x: mid.x, y: mid.y, kind: d.kind as 'gate' | 'lock', opened: this.explore.opened.has(d.link), rooms: [l.a, l.b] };
         }),
       key: this.floorData.key ? { ...this.floorData.key, taken: this.explore.keyTaken } : null,
+      hidden: (() => {
+        const d = this.floorData.specialDoors.find((x) => x.kind === 'secret');
+        const mid = d?.tiles[Math.floor(d.tiles.length / 2)];
+        return mid ? { x: mid.x, y: mid.y, found: this.explore.hiddenFound } : null;
+      })(),
       redPortalClosed: !this.portals.some((p) => p.kind === 'red'),
       bossDefeated: this.bossState === 'defeated',
     };

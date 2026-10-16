@@ -16,6 +16,9 @@ export interface PruneResult {
   readonly template: RoomTemplate;
   readonly removedVine: number;
   readonly removedOneWay: number;
+  /** 메운 막다른 구석 칸 / 깎은 튀어나온 턱 칸 */
+  readonly filled: number;
+  readonly shaved: number;
   /** 정리 전에 이미 검증을 통과하지 못해 손대지 않았으면 false */
   readonly ok: boolean;
 }
@@ -48,7 +51,7 @@ export function pruneTemplate(t: RoomTemplate, p: ReachParams): PruneResult {
     if (lintTemplate(tt).length > 0 || validateTemplate(tt, p).length > 0) return false;
     return required.every((open) => validateTemplate(withOpen(open), p).length === 0);
   };
-  if (!valid()) return { template: t, removedVine: 0, removedOneWay: 0, ok: false };
+  if (!valid()) return { template: t, removedVine: 0, removedOneWay: 0, filled: 0, shaved: 0, ok: false };
   // 원래 템플릿이 통과하는 상태만 요구한다
   required = subsets.filter((open) => validateTemplate(withOpen(open), p).length === 0);
 
@@ -103,5 +106,57 @@ export function pruneTemplate(t: RoomTemplate, p: ReachParams): PruneResult {
   // 넝쿨은 위쪽만 줄인다 (아래 끝은 바닥에 닿아 있어야 붙잡을 수 있다). 긴 것부터
   for (const run of vines.sort((a, b) => b.length - a.length)) removedVine += tryRemove(run, ['head']);
   for (const run of ones.sort((a, b) => a.length - b.length)) removedOneWay += tryRemove(run, ['head', 'tail']);
-  return { template: build(), removedVine, removedOneWay, ok: true };
+
+  // 지형 다듬기 (기획자 요청: 막다른 구석/애매한 턱 정리)
+  let filled = 0;
+  let shaved = 0;
+  const inner = (x: number, y: number) => x > 0 && y > 0 && x < t.width - 1 && y < t.height - 1;
+  const nearDoor = (x: number, y: number) => {
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (at(x + dx, y + dy) === 'D') return true;
+    return false;
+  };
+  const N4 = [
+    [0, -1],
+    [0, 1],
+    [-1, 0],
+    [1, 0],
+  ] as const;
+  const count = (x: number, y: number, ch: string) => N4.filter(([dx, dy]) => at(x + dx, y + dy) === ch).length;
+  // 1) 위아래가 바위인 한 칸 높이 틈: 몸(22px)이 못 들어가므로 메워도 이동이 바뀌지 않는다 (검증 없이)
+  for (let again = true; again; ) {
+    again = false;
+    for (let y = 1; y < t.height - 1; y++) {
+      for (let x = 1; x < t.width - 1; x++) {
+        if (at(x, y) !== '.' || at(x, y - 1) !== '#' || at(x, y + 1) !== '#' || nearDoor(x, y)) continue;
+        rows[y]![x] = '#';
+        filled++;
+        again = true;
+      }
+    }
+  }
+  // 2) 세 면이 바위인 빈칸(막다른 구석)은 메우고, 세 면이 빈 바위(튀어나온 턱)는 깎는다. 검증을 통과할 때만. 몇 번 반복
+  for (let pass = 0; pass < 4; pass++) {
+    let changed = false;
+    for (let y = 1; y < t.height - 1; y++) {
+      for (let x = 1; x < t.width - 1; x++) {
+        if (!inner(x, y) || nearDoor(x, y)) continue;
+        const c = at(x, y);
+        if (c === '.' && count(x, y, '#') >= 3) {
+          rows[y]![x] = '#';
+          if (valid()) {
+            filled++;
+            changed = true;
+          } else rows[y]![x] = '.';
+        } else if (c === '#' && count(x, y, '.') >= 3) {
+          rows[y]![x] = '.';
+          if (valid()) {
+            shaved++;
+            changed = true;
+          } else rows[y]![x] = '#';
+        }
+      }
+    }
+    if (!changed) break;
+  }
+  return { template: build(), removedVine, removedOneWay, filled, shaved, ok: true };
 }

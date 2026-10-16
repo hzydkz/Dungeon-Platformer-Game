@@ -8,6 +8,8 @@ export const MAP = {
   showUndiscoveredPortals: false,
   /** 보스방 위치는 처음부터 표시 [확정] */
   showBossFromStart: true,
+  /** 숨은 방 입구(비밀 벽) 위치를 처음부터 표시. 기획자 요청 임시 기능: 테스트가 끝나면 false로 */
+  showHiddenRoom: true,
   /** 지도 영역 (px, 480×270 화면 기준) */
   panel: { x: 12, y: 22, width: 456, height: 216 },
   /** 지형을 그릴 최대 영역 (범례, 제목, 아이템 줄 제외) */
@@ -34,6 +36,7 @@ export const MAP = {
     shop: 0xc06a00,
     gate: 0x2a8a5a,
     lock: 0xb08010,
+    hidden: 0xd040a0,
     zone: { nest: 0xb03030, trap: 0xb06020 },
     player: 0xd02020,
   },

@@ -538,6 +538,17 @@ function assemble(opts: FloorGenOptions, lib: TemplateLibrary, rng: Rng, layout:
     } else specialDoors.push({ link: i, kind: l.kind, tiles });
   });
 
+  // 위아래로 이어진 방 사이 틈(아래 방의 맨 윗줄)에 단방향 발판: 아래 방 발사대에서 한 번에 위 방까지 뛰기 어렵다는 피드백.
+  // 발사대 → 이 발판(2칸) → 위 방 바닥(1칸 + 옆으로)으로 두 번에 나눠 오른다. 위에서 내려올 때는 ↓+점프로 통과
+  layout.links.forEach((l, i) => {
+    if (l.kind !== 'open' || isSideDir(l.dir)) return;
+    const lower = rooms[l.a]!.y > rooms[l.b]!.y ? rooms[l.a]! : rooms[l.b]!;
+    const t = linkDoorTiles(layout, l, slots[i]!);
+    for (const x of new Set([...t.a, ...t.b].map((p) => p.x))) {
+      if (getTile(grid, x, lower.y) === Tile.Empty) setTile(grid, x, lower.y, Tile.OneWay);
+    }
+  });
+
   // 몬스터: 지형이 다 정해진 뒤 방마다 막힌 블록 위에 (입구/상점/잠긴 방/숨은 방/아레나 제외)
   const avoid: TilePos[] = [entrance, exitPortal, redPortal, ...taken, ...filteredChests, ...specialDoors.flatMap((d) => (d.lever ? [d.lever] : []))].filter(
     (p): p is TilePos => p !== null,
@@ -596,7 +607,8 @@ export function validateFloor(f: Assembled): string[] {
   if (L.exit === L.boss) errors.push('출구와 보스방이 같음');
   if (L.red >= 0 && [L.entrance, L.exit, L.boss].includes(L.red)) errors.push('빨간 포탈 방이 입구/출구/보스방과 겹침');
 
-  const open = (x: number, y: number) => getTile(f.grid, x, y) === Tile.Empty;
+  // 위아래 연결 틈의 단방향 발판(통과 가능)은 열린 것으로 친다
+  const open = (x: number, y: number) => getTile(f.grid, x, y) === Tile.Empty || getTile(f.grid, x, y) === Tile.OneWay;
   L.links.forEach((l, i) => {
     if (l.kind !== 'open') return;
     const t = linkDoorTiles(L, l, f.linkSlots[i]!);

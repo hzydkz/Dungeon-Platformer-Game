@@ -85,3 +85,12 @@ describe('약도 표식', () => {
     throw new Error('열쇠가 있는 층을 찾지 못했다');
   });
 });
+
+describe('숨은 방 입구 임시 표시 (기획자 요청)', () => {
+  it('설정이 켜져 있으면 숨은 방 입구를 처음부터 표시하고, 꺼져 있으면 숨긴다', () => {
+    const { input } = setup();
+    const withHidden = { ...input, hidden: { x: 10, y: 20, found: false } };
+    expect(kinds(withHidden, { ...MAP, showHiddenRoom: true })).toContain('hidden');
+    expect(kinds(withHidden, { ...MAP, showHiddenRoom: false })).not.toContain('hidden');
+  });
+});

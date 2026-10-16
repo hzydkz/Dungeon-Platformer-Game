@@ -12,7 +12,7 @@ import { MAP } from '../../config/map';
 import type { GeneratedFloor } from '../generation/floor';
 import type { Exploration } from './exploration';
 
-export type MarkerKind = 'player' | 'boss' | 'entrance' | 'exit' | 'red' | 'chest' | 'altar' | 'shop' | 'gate' | 'lock' | 'key';
+export type MarkerKind = 'player' | 'boss' | 'entrance' | 'exit' | 'red' | 'chest' | 'altar' | 'shop' | 'gate' | 'lock' | 'key' | 'hidden';
 
 export interface MapMarker {
   readonly kind: MarkerKind;
@@ -35,6 +35,8 @@ export interface MarkerInput {
   /** 지름길 문/잠긴 문 (숨은 방 입구는 표시하지 않는다) */
   readonly doors?: readonly { readonly x: number; readonly y: number; readonly kind: 'gate' | 'lock'; readonly opened: boolean; readonly rooms: readonly number[] }[];
   readonly key?: { readonly x: number; readonly y: number; readonly room: number; readonly taken: boolean } | null;
+  /** 숨은 방 입구(비밀 벽) 위치. MAP.showHiddenRoom이 켜져 있으면 표시 (기획자 요청 임시 기능) */
+  readonly hidden?: { readonly x: number; readonly y: number; readonly found: boolean } | null;
   /** 빨간 포탈이 이미 닫혔는지 */
   readonly redPortalClosed: boolean;
   readonly bossDefeated: boolean;
@@ -45,6 +47,7 @@ export interface MarkerOptions {
   readonly showPortalsAfterDiscovery: boolean;
   readonly showUndiscoveredPortals: boolean;
   readonly showBossFromStart: boolean;
+  readonly showHiddenRoom?: boolean;
 }
 
 export function mapMarkers(input: MarkerInput, options: MarkerOptions = MAP): MapMarker[] {
@@ -77,6 +80,7 @@ export function mapMarkers(input: MarkerInput, options: MarkerOptions = MAP): Ma
     out.push({ kind: d.kind, x: d.x, y: d.y, label: d.kind === 'gate' ? (d.opened ? '지름길' : '지름길(닫힘)') : d.opened ? '열린 문' : '잠긴 문', spent: d.opened });
   }
   if (input.key && !input.key.taken && ex.isSeen(input.key.x, input.key.y)) out.push({ kind: 'key', x: input.key.x, y: input.key.y, label: '열쇠', spent: false });
+  if (input.hidden && options.showHiddenRoom) out.push({ kind: 'hidden', x: input.hidden.x, y: input.hidden.y, label: input.hidden.found ? '숨은 방' : '숨은 방 입구(임시 표시)', spent: input.hidden.found });
   out.push({ kind: 'player', x: input.player.x, y: input.player.y, label: '현재 위치', spent: false });
   return out;
 }

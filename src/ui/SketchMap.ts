@@ -322,6 +322,12 @@ export class SketchMap {
           g.fillStyle(c.lock, 1).fillCircle(x - 1, y - 1, 2.5).fillRect(x, y, 4, 1.5);
           label(m, x, y, hex(c.lock));
           break;
+        case 'hidden':
+          // 점선 사각형 + 물음표 느낌의 점: 임시 표시
+          g.lineStyle(1, c.hidden, a).strokeRect(x - 4, y - 4, 8, 8);
+          g.fillStyle(c.hidden, a).fillRect(x - 1, y - 1, 2, 2);
+          label(m, x, y, hex(c.hidden));
+          break;
         case 'shop':
           g.fillStyle(c.shop, 1).fillRect(x - 4, y - 4, 8, 8);
           g.lineStyle(1, 0xffffff, 1).strokeRect(x - 4, y - 4, 8, 8);

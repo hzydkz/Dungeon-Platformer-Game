@@ -158,3 +158,20 @@ describe('층 단위 넝쿨 정리 (기획자 요청: 막힌 곳으로 가는 �
     }, 60_000);
   }
 });
+
+describe('위아래 방 사이 틈의 단방향 발판 (기획자 요청: 위 방으로 오르기 쉽게)', () => {
+  it('열린 위/아래 연결마다 아래 방 맨 윗줄 출입구 칸이 단방향 발판이다', () => {
+    let n = 0;
+    for (let seed = 0; seed < 20; seed++) {
+      const f = generateFloor({ runSeed: seed, floor: 1 + (seed % 9), kind: 'floor', reachCheck: false });
+      f.layout.links.forEach((l, i) => {
+        if (l.kind !== 'open' || l.dir === 'left' || l.dir === 'right') return;
+        const lower = f.rooms[l.a]!.y > f.rooms[l.b]!.y ? f.rooms[l.a]! : f.rooms[l.b]!;
+        const row = Array.from({ length: lower.w }, (_, k) => f.grid.tiles[lower.y * f.grid.width + lower.x + k]);
+        expect(row.filter((t) => t === Tile.OneWay).length, `link ${i}`).toBeGreaterThanOrEqual(4);
+        n++;
+      });
+    }
+    expect(n).toBeGreaterThan(10);
+  });
+});
